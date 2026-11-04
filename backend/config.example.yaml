@@ -1,0 +1,79 @@
+# dnsui configuration example.
+# Copy to config.yaml (or point DNSUI_CONFIG at this file).
+# Reloaded on POST /api/reload and after PUT /api/config.
+
+listen:
+  dns: "0.0.0.0:53"        # UDP and TCP
+  http: "0.0.0.0:8080"     # API and static UI
+
+# Plain IPs used only to resolve DoH hostnames. Required when an upstream
+# URL uses a hostname (not an IP literal).
+bootstrap: ["9.9.9.10"]
+
+# Named sets of DoH endpoints. Servers are tried in order. A client's group
+# falls back to default_upstream_group's servers when every server fails.
+upstream_groups:
+  default: ["https://dns10.quad9.net/dns-query"]
+  nextdns: ["https://abc123.dns.nextdns.io/dns-query"]   # example
+
+clients:
+  - name: Laptop
+    cidrs: ["192.0.2.10/32", "198.51.100.65/32"]
+    upstream_group: nextdns
+    block_lists: ["ads", "spy"]
+    allow_domains: ["tracker.example.com"]     # suffix match, client-scoped
+    block_domains: []
+  - name: WiFi
+    cidrs: ["198.51.100.0/24"]
+    upstream_group: default
+    block_lists: ["ads"]
+    allow_domains: []
+    block_domains: []
+
+# Block lists. Each source is an http(s) URL (cached on disk under
+# DNSUI_CACHE_DIR) or a local file path. format: auto | hosts | plain | abp
+#
+# With the database on (the default, DNSUI_DB_ENABLED), these entries are
+# imported once, on the first start with an empty lists table. After that the
+# database is the source of truth. Manage lists in the dashboard or through
+# /api/lists, and edits to this section have no effect.
+lists:
+  ads:
+    sources: ["https://example.com/hosts.txt"]
+    format: auto
+  spy:
+    sources: ["/etc/dnsui/lists/spy.txt"]
+    format: auto
+
+# Allow lists. Same shape as `lists`, used as allow sources. An allow list
+# overrides block lists for every client, and it is imported the same way.
+# Each source is an http(s) URL or a local file path.
+allow_lists: {}
+#  trusted:
+#    sources: ["https://example.com/allowlist.txt"]
+#    format: auto
+
+# How long history is kept, in days. A background pass runs every hour.
+# query_days: per-query log rows. stats_days: per-minute rollups.
+retention:
+  query_days: 30
+  stats_days: 365
+
+# Block lists used for clients that match no CIDR ("global" lists for unknown clients).
+default_block_lists: ["ads"]
+
+# Local answers. "*.suffix" matches subdomains of suffix (not the suffix itself).
+# A/AAAA answers get TTL 60. Other types get NODATA.
+rewrites:
+  - domain: "*.example.test"
+    answer: "203.0.113.116"
+  - domain: "dns.example.test"
+    answer: "192.0.2.53"
+
+# Global allow entries. Suffix match. These always win over block lists.
+allow_domains: []
+
+# Global custom blocks. Suffix match.
+block_domains: []
+
+default_upstream_group: default
