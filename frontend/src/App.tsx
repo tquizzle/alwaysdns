@@ -1,0 +1,135 @@
+import { useMe, useHealth, useLogout } from './api/queries';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorState, LoadingState } from './components/States';
+import { PaletteSelect } from './components/PaletteSelect';
+import { useHashRoute, type Route } from './lib/hashRoute';
+import { usePrefs } from './lib/prefs';
+import { BrandMark, LoginPage } from './pages/LoginPage';
+import { Dashboard } from './pages/Dashboard';
+import { QueryLogPage } from './pages/QueryLogPage';
+import { ClientsPage } from './pages/ClientsPage';
+import { ListsPage } from './pages/ListsPage';
+
+const NAV: { route: Route; label: string }[] = [
+  { route: 'dashboard', label: 'Dashboard' },
+  { route: 'querylog', label: 'Query log' },
+  { route: 'lists', label: 'Lists' },
+  { route: 'clients', label: 'Clients' },
+];
+
+export function App() {
+  const me = useMe();
+
+  if (me.isPending) {
+    return (
+      <div className="boot">
+        <LoadingState label="Checking session" />
+      </div>
+    );
+  }
+
+  if (me.isError) {
+    return (
+      <div className="boot">
+        <ErrorState error={me.error} onRetry={() => me.refetch()} />
+      </div>
+    );
+  }
+
+  if (!me.data) {
+    return <LoginPage />;
+  }
+
+  return <Shell username={me.data.username} role={me.data.role} />;
+}
+
+function Shell({ username, role }: { username: string; role: string }) {
+  const [route, navigate] = useHashRoute();
+  const isAdmin = role === 'admin';
+  const logout = useLogout();
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <BrandMark />
+          <span>DNS Control</span>
+        </div>
+
+        <nav className="nav" aria-label="Main">
+          {NAV.map((item) => (
+            <a
+              key={item.route}
+              href={`#/${item.route}`}
+              aria-current={route === item.route ? 'page' : undefined}
+              className={route === item.route ? 'active' : ''}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(item.route);
+              }}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+
+        <div className="topbar-right">
+          <HealthPill />
+          <PaletteSelect />
+          <RedactToggle />
+          <span className="user-chip" title={`Signed in as ${username} (${role})`}>
+            {username}
+            <small>{role}</small>
+          </span>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => logout.mutate()}
+            disabled={logout.isPending}
+          >
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      <main className="content">
+        <ErrorBoundary resetKey={route}>
+          {route === 'dashboard' && <Dashboard />}
+          {route === 'querylog' && <QueryLogPage />}
+          {route === 'lists' && <ListsPage isAdmin={isAdmin} />}
+          {route === 'clients' && <ClientsPage />}
+        </ErrorBoundary>
+      </main>
+    </div>
+  );
+}
+
+function HealthPill() {
+  const health = useHealth();
+  if (health.isError) {
+    return <span className="pill pill-red" role="status">API offline</span>;
+  }
+  if (!health.data) {
+    return <span className="pill" role="status">Checking</span>;
+  }
+  return (
+    <span className={`pill ${health.data.ok ? 'pill-green' : 'pill-yellow'}`} role="status">
+      {health.data.ok ? 'Healthy' : 'Degraded'} · v{health.data.version}
+    </span>
+  );
+}
+
+function RedactToggle() {
+  const { redactAddresses, setRedactAddresses } = usePrefs();
+  return (
+    <button
+      type="button"
+      className="btn btn-small"
+      aria-pressed={redactAddresses}
+      title="Mask the last two octets of client addresses on screen"
+      onClick={() => setRedactAddresses(!redactAddresses)}
+    >
+      {redactAddresses ? 'IPs masked' : 'Mask IPs'}
+    </button>
+  );
+}
