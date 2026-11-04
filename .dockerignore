@@ -1,0 +1,8 @@
+# Build artifacts and VCS metadata, at any depth
+**/node_modules
+**/target
+**/.git
+
+# Local secrets. The real env file must never enter the build context.
+deploy/dnsui.env
+deploy/config.yaml
