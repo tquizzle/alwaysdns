@@ -10,10 +10,12 @@ Files:
 | --- | --- |
 | `Dockerfile` | Three-stage build: frontend, backend, runtime |
 | `docker-compose.yml` | Service definition, ports, volumes, healthcheck |
+| `entrypoint.sh` | Fixes ownership of the mounted config directory, then runs the server as the `dnsui` user |
+| `config.example.yaml` | Template for `config.yaml`. Also copied into the image as the seed config |
 | `dnsui.env.example` | Template for secrets and settings |
 | `caddy/dns.example.test.caddy` | Caddy site for the Caddy host |
 
-The build context is the parent directory, `the repository root`. The whole
+The build context is the parent directory (the repository root, on the Docker host). The whole
 project tree (`backend/`, `frontend/`, `deploy/`) must be on the Docker host.
 Run every command below from the `deploy/` directory.
 
@@ -88,9 +90,11 @@ reached from the LAN. Set the upstream resolvers and any local records, such
 as `nas.test`.
 
 The file lives in this deploy directory and the whole directory is mounted into
-the container at `/app/config`. The Config page reads the settings the server is
-running with and saves changes back to this file, so `config.yaml` on the host
-always reflects the latest saved config.
+the container at `/app/config`. The server saves changes made in the dashboard
+(lists, list assignments, clients, upstream groups and blocked domains) back to
+this file, so `config.yaml` on the host always reflects the latest saved state.
+The dashboard has no page for editing the raw file. To apply a manual edit,
+restart the container, or call `POST /api/reload` with a logged-in session.
 
 Saving writes a temp file in this directory and renames it, so the container user
 (uid 10001) must be able to write the directory. The container fixes this itself
