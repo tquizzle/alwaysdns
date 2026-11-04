@@ -1,5 +1,5 @@
 // Display-only redaction. These helpers never change data sent to the API;
-// they mask client addresses and secret values on screen when enabled.
+// they mask client addresses on screen when enabled.
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/;
 const IPV6_HEX_GROUP = /^[0-9a-fA-F]{0,4}$/;
@@ -48,30 +48,4 @@ export function redactAddressList(values: string[], enabled: boolean): string[] 
 /** Returns the value unchanged when redaction is off, otherwise a masked version. */
 export function redactDisplay(value: string, enabled: boolean): string {
   return enabled ? redactAddress(value) : value;
-}
-
-export const SECRET_MASK = '••••••';
-
-// Keys whose values should never be shown in plain text on screen.
-const SECRET_KEY = /(password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|auth)/i;
-
-/**
- * Masks scalar values of secret-looking YAML keys. Works line by line on the
- * common "key: value" shape and leaves comments, lists and structure intact.
- *   password: hunter2       -> password: ••••••
- *   - token: "abc"          -> - token: ••••••
- */
-export function redactYaml(yaml: string): string {
-  return yaml
-    .split('\n')
-    .map((line) => {
-      const match = /^(\s*(?:-\s+)?)([A-Za-z0-9_.\-"' ]+?)(\s*:\s*)(.*)$/.exec(line);
-      if (!match) return line;
-      const [, indent, rawKey, sep, value] = match;
-      const key = rawKey.replace(/["']/g, '').trim();
-      if (!SECRET_KEY.test(key)) return line;
-      if (value.trim() === '' || value.trim().startsWith('#')) return line;
-      return `${indent}${rawKey}${sep}${SECRET_MASK}`;
-    })
-    .join('\n');
 }

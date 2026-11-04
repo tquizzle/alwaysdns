@@ -32,7 +32,6 @@ export const queryKeys = {
   history: (params: HistoryParams | null) => ['history', params] as const,
   lists: ['lists'] as const,
   clients: ['clients'] as const,
-  config: ['config'] as const,
   health: ['health'] as const,
 };
 
@@ -243,28 +242,4 @@ export function useHealth() {
     refetchInterval: POLL_HEALTH_MS,
     retry: 1,
   });
-}
-
-export function useConfig(enabled: boolean) {
-  return useQuery({
-    queryKey: queryKeys.config,
-    queryFn: api.getConfig,
-    enabled,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-  });
-}
-
-export function useSaveConfig() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (yaml: string) => api.saveConfig(yaml),
-    onSuccess: (_data, yaml) => {
-      queryClient.setQueryData(queryKeys.config, { yaml });
-    },
-  });
-}
-
-export function useReloadConfig() {
-  return useMutation({ mutationFn: api.reload });
 }

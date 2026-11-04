@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SECRET_MASK, redactAddress, redactAddressList, redactDisplay, redactYaml } from './redact';
+import { redactAddress, redactAddressList, redactDisplay } from './redact';
 
 describe('redactAddress', () => {
   it('masks the last two IPv4 octets', () => {
@@ -32,31 +32,5 @@ describe('redactDisplay and redactAddressList', () => {
   it('masks every entry when redaction is on', () => {
     expect(redactDisplay('192.168.1.25', true)).toBe('192.168.x.x');
     expect(redactAddressList(['192.168.1.0/24', 'fd00::/8'], true)).toEqual(['192.168.x.x/24', 'fd00:x:x/8']);
-  });
-});
-
-describe('redactYaml', () => {
-  it('masks scalar values of secret-looking keys', () => {
-    const input = [
-      'upstreams:',
-      '  - name: cloudflare',
-      '    token: "abc123"',
-      'admin:',
-      '  password: hunter2',
-      '  api_key: xyz',
-    ].join('\n');
-    const out = redactYaml(input).split('\n');
-    expect(out[2]).toBe(`    token: ${SECRET_MASK}`);
-    expect(out[4]).toBe(`  password: ${SECRET_MASK}`);
-    expect(out[5]).toBe(`  api_key: ${SECRET_MASK}`);
-  });
-
-  it('keeps ordinary keys, comments and empty secret values', () => {
-    const input = ['listen: 0.0.0.0:53', '# password: commented', 'secret:', '  - item'].join('\n');
-    expect(redactYaml(input)).toBe(input);
-  });
-
-  it('masks list items that use a secret key', () => {
-    expect(redactYaml('  - password: abc')).toBe(`  - password: ${SECRET_MASK}`);
   });
 });

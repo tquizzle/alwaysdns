@@ -1,6 +1,6 @@
 # DNS Control frontend
 
-Web UI for the homelab DNS server: dashboard, query log, clients, config (admin) and login.
+Web UI for the homelab DNS server: dashboard, query log, clients and login.
 
 Stack: Vite, React 19, TypeScript, TanStack Query (polling), TanStack Table, hand-drawn SVG charts.
 
@@ -23,7 +23,7 @@ DNSUI_API_TARGET=http://192.168.1.10:8080 npm run dev
 ## Layout
 
 - `src/api/`: typed API client, endpoint functions, TanStack Query hooks.
-- `src/pages/`: Dashboard, QueryLog, Lists, Clients, Config, Login.
+- `src/pages/`: Dashboard, QueryLog, Lists, Clients, Login.
 - `src/components/`: gauges, line chart, bar lists, tables, states, error boundary.
 - `src/lib/`: formatting helpers, display-only redaction, hash router, preferences.
 
@@ -38,4 +38,4 @@ A 401 from any protected endpoint returns the user to the login page.
   (last hour, day, week or month, or a custom from and to). Live refresh applies to the first page only.
 - **Lists**: block and allow lists with enable toggles, rule counts, last updated times and errors. Admins can add,
   edit, delete and refresh lists. Viewers see read-only lists with the URL masked (credentials and query values hidden).
-- **Clients** and **Config** (admin only) are unchanged.
+- **Clients** is unchanged.

@@ -4,7 +4,7 @@
 
 export interface Me {
   username: string;
-  role: string; // "admin" unlocks the Config page and list editing
+  role: string; // "admin" unlocks list editing
 }
 
 export interface LoginBody {
@@ -234,10 +234,6 @@ export interface GroupCreateBody {
 
 export interface GroupUpdateBody {
   upstreams: string[];
-}
-
-export interface ConfigResponse {
-  yaml: string;
 }
 
 export interface Health {

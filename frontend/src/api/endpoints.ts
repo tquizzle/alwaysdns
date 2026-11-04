@@ -7,7 +7,6 @@ import type {
   BlockResponse,
   ClientUpdateBody,
   ClientsResponse,
-  ConfigResponse,
   FilterList,
   GroupCreateBody,
   GroupUpdateBody,
@@ -89,13 +88,6 @@ export const api = {
 
   deleteGroup: (name: string) =>
     apiRequest<OkResponse>(`/api/upstream-groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-
-  getConfig: () => apiRequest<ConfigResponse>('/api/config'),
-
-  saveConfig: (yaml: string) =>
-    apiRequest<void>('/api/config', { method: 'PUT', json: { yaml } }),
-
-  reload: () => apiRequest<void>('/api/reload', { method: 'POST' }),
 
   health: () => apiRequest<Health>('/api/health', { skipUnauthorized: true }),
 };
