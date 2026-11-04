@@ -1,0 +1,10 @@
+# Caddy site for the dnsui dashboard. Add to the Caddy host at 203.0.113.116.
+# The site uses the existing Caddy local CA (tls internal), so clients that
+# already trust that CA need no changes.
+https://dns.example.test {
+	tls internal
+
+	reverse_proxy http://192.0.2.53:8080 {
+		header_up Host {host}
+	}
+}

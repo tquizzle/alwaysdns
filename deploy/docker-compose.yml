@@ -1,0 +1,83 @@
+name: dnsui
+
+services:
+  dnsui:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # Tagged so `docker run --rm -i dnsui hash-password` works.
+    image: dnsui:latest
+    container_name: dnsui
+    restart: unless-stopped
+
+    # Optional settings. The admin password is generated on the first start (see README).
+    # Created from dnsui.env.example. Never commit the real file.
+    env_file: ./dnsui.env
+
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "8080:8080"
+
+    # The process binds port 53 as a non-root user. The Dockerfile sets the
+    # file capability on the binary, and this grants the capability to the
+    # container so the file capability is honored.
+    cap_add:
+      - NET_BIND_SERVICE
+
+    environment:
+      # Admin credentials and cached lists live in the volume, so they survive rebuilds.
+      DNSUI_DATA_DIR: /app/data
+      DNSUI_CACHE_DIR: /app/data/cache
+      # The config file lives in this deploy directory, on the host as ./config.yaml.
+      DNSUI_CONFIG: /app/config/config.yaml
+
+    volumes:
+      # The whole deploy directory is mounted, not the single file, so the Config page can
+      # save by writing a temp file and renaming it. Single-file bind mounts cannot be renamed over.
+      - ./:/app/config
+      - dnsui-data:/app/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dnsui-data:
+
+# ---------------------------------------------------------------------------
+# Optional: macvlan, to give the container its own LAN address (192.0.2.53).
+#
+# Use this if the host itself needs port 53 (for example, if the host runs
+# its own DNS service and you cannot move it), or if the container should
+# appear on the LAN as a separate machine. With macvlan the container has its
+# own MAC address, so host port conflicts no longer apply.
+#
+# Limitation: by default the Docker host cannot reach a macvlan container's IP
+# directly. Other LAN hosts can, which is what DNS clients need.
+#
+# To use it, comment out the `ports:` block above and uncomment the lines
+# below. Set `parent` to the host's LAN interface (eth0 is a placeholder), and
+# set `gateway` to the LAN router.
+#
+# In the service:
+#
+#     networks:
+#       lan:
+#         ipv4_address: 192.0.2.53
+#
+# At the top level:
+#
+# networks:
+#   lan:
+#     driver: macvlan
+#     driver_opts:
+#       parent: eth0
+#     ipam:
+#       config:
+#         - subnet: 192.0.2.0/24
+#           gateway: 192.0.2.1
+# ---------------------------------------------------------------------------
