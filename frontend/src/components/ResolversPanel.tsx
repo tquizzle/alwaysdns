@@ -1,14 +1,42 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useCreateResolver, useDeleteResolver, useUpdateResolver } from '../api/queries';
 import type { Protocol, Resolver } from '../api/types';
 import { PROTOCOL_LABEL, resolverNameError, upstreamUrlError } from '../lib/resolvers';
-import { Notice, type NoticeState } from './States';
+import { EmptyState, Notice, type NoticeState } from './States';
 import { Panel } from './Panel';
 
 /** DoH or DoQ tag for a resolver. Renders nothing when the protocol is unknown. */
 export function ProtocolBadge({ protocol }: { protocol: Protocol | null | undefined }) {
   if (!protocol) return null;
   return <span className="badge badge-cyan">{PROTOCOL_LABEL[protocol]}</span>;
+}
+
+/** Names as small badges, three at most, with a +N badge for the rest. */
+export function UsedByBadges({ names, empty }: { names: string[]; empty: string }) {
+  if (names.length === 0) return <span className="muted small">{empty}</span>;
+  const shown = names.slice(0, 3);
+  const extra = names.length - shown.length;
+  return (
+    <div className="chip-row">
+      {shown.map((name) => (
+        <span key={name} className="badge">{name}</span>
+      ))}
+      {extra > 0 && (
+        <span className="badge" title={names.slice(3).join(', ')}>+{extra}</span>
+      )}
+    </div>
+  );
+}
+
+/** Moves focus to the control marked data-focus-id once React has drawn it. */
+export function focusControl(root: HTMLElement | null, id: string): void {
+  requestAnimationFrame(() => {
+    root?.querySelector<HTMLElement>(`[data-focus-id="${CSS.escape(id)}"]`)?.focus();
+  });
+}
+
+export function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 interface FormProps {
@@ -49,6 +77,8 @@ function ResolverForm({ editing, onDone, onCancel }: FormProps) {
     }
   };
 
+  const groups = editing?.groups ?? [];
+
   return (
     <form className="group-form" onSubmit={onSubmit} noValidate aria-label={editing ? `Edit ${editing.name}` : 'Add resolver'}>
       <div className="form-grid resolver-grid">
@@ -56,6 +86,7 @@ function ResolverForm({ editing, onDone, onCancel }: FormProps) {
           <span>Friendly name</span>
           <input
             value={name}
+            autoFocus
             placeholder="e.g. NextDNS (DoQ)"
             autoComplete="off"
             onChange={(e) => setName(e.target.value)}
@@ -74,7 +105,12 @@ function ResolverForm({ editing, onDone, onCancel }: FormProps) {
         </label>
       </div>
       {editing && (
-        <p className="muted small">Renaming updates every group that uses this resolver. Changing the URL starts its stats over.</p>
+        <p className="muted small">
+          {groups.length > 0
+            ? `Renaming updates ${plural(groups.length, 'group')} (${groups.join(', ')}). `
+            : ''}
+          Changing the URL starts its stats over.
+        </p>
       )}
       {error && <Notice tone="error">{error}</Notice>}
       <div className="row-actions">
@@ -91,14 +127,29 @@ function ResolverForm({ editing, onDone, onCancel }: FormProps) {
 
 interface Props {
   resolvers: Resolver[];
+  /** Another panel can raise this number to ask for the Add form to open. */
+  openSignal?: number;
 }
 
 /** Admin panel: add, edit and delete the named upstream servers that groups use. */
-export function ResolversPanel({ resolvers }: Props) {
+export function ResolversPanel({ resolvers, openSignal = 0 }: Props) {
   const remove = useDeleteResolver();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<Resolver | 'new' | null>(null);
   const [confirmName, setConfirmName] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const deletingName = remove.isPending ? (remove.variables ?? null) : null;
+
+  useEffect(() => {
+    if (openSignal === 0) return;
+    setEditing('new');
+    rootRef.current?.scrollIntoView({ block: 'start' });
+  }, [openSignal]);
+
+  const closeForm = (focusId: string) => {
+    setEditing(null);
+    focusControl(rootRef.current, focusId);
+  };
 
   const onDelete = (resolver: Resolver) => {
     setNotice(null);
@@ -106,6 +157,7 @@ export function ResolversPanel({ resolvers }: Props) {
       onSuccess: () => {
         setConfirmName(null);
         setNotice({ tone: 'ok', text: `Deleted resolver ${resolver.name}.` });
+        focusControl(rootRef.current, 'add-resolver');
       },
       onError: (err) => {
         setConfirmName(null);
@@ -115,112 +167,136 @@ export function ResolversPanel({ resolvers }: Props) {
   };
 
   return (
-    <Panel
-      title="Resolvers"
-      actions={
-        editing === null ? (
-          <button type="button" className="btn btn-small btn-primary" onClick={() => setEditing('new')}>
-            Add resolver
-          </button>
-        ) : null
-      }
-    >
-      <p className="muted small panel-sub">
-        A resolver is one DNS server with a friendly name. Each one gets its own stats card on the dashboard, so add the DoH
-        and DoQ versions of a provider separately. Groups below choose which resolvers a client uses.
-      </p>
+    <div ref={rootRef}>
+      <Panel
+        title={`Resolvers (${resolvers.length})`}
+        actions={
+          editing === null ? (
+            <button
+              type="button"
+              data-focus-id="add-resolver"
+              className="btn btn-small btn-primary"
+              onClick={() => setEditing('new')}
+            >
+              Add resolver
+            </button>
+          ) : null
+        }
+      >
+        <p className="muted small panel-sub">
+          One DNS server each. Add the DoH and DoQ versions of a provider separately, and each gets its own dashboard card.
+        </p>
 
-      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+        <div aria-live="polite" aria-atomic="true">
+          {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+        </div>
 
-      {editing !== null && (
-        <ResolverForm
-          editing={editing === 'new' ? null : editing}
-          onDone={(text) => {
-            setEditing(null);
-            setNotice({ tone: 'ok', text });
-          }}
-          onCancel={() => setEditing(null)}
-        />
-      )}
+        {editing !== null && (
+          <ResolverForm
+            editing={editing === 'new' ? null : editing}
+            onDone={(text) => {
+              const focusId = editing === 'new' ? 'add-resolver' : `edit:${editing.name}`;
+              setNotice({ tone: 'ok', text });
+              closeForm(focusId);
+            }}
+            onCancel={() => closeForm(editing === 'new' ? 'add-resolver' : `edit:${editing.name}`)}
+          />
+        )}
 
-      <div className="table-wrap">
-        <table aria-label="Resolvers">
-          <thead>
-            <tr>
-              <th scope="col">Resolver</th>
-              <th scope="col">Protocol</th>
-              <th scope="col">Server</th>
-              <th scope="col">Used by</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {resolvers.length === 0 && (
+        <div className="table-wrap stack">
+          <table aria-label="Resolvers">
+            <thead>
               <tr>
-                <td colSpan={5} className="muted">No resolvers yet.</td>
+                <th scope="col">Resolver</th>
+                <th scope="col">Protocol</th>
+                <th scope="col">Server</th>
+                <th scope="col">Used by</th>
+                <th scope="col">Actions</th>
               </tr>
-            )}
-            {resolvers.map((resolver) => (
-              <tr key={resolver.name}>
-                <td>
-                  <strong>{resolver.name}</strong>
-                </td>
-                <td>
-                  <ProtocolBadge protocol={resolver.protocol} />
-                </td>
-                <td className="mono url-cell">
-                  <div title={resolver.url}>{resolver.url}</div>
-                </td>
-                <td className="muted small">
-                  {resolver.groups.length === 0 ? 'No group' : resolver.groups.join(', ')}
-                </td>
-                <td>
-                  {confirmName === resolver.name ? (
-                    <div className="row-actions">
-                      <span className="small text-red">Delete this resolver?</span>
-                      <button
-                        type="button"
-                        className="btn btn-small btn-danger"
-                        disabled={remove.isPending}
-                        onClick={() => onDelete(resolver)}
-                      >
-                        {remove.isPending ? 'Deleting...' : 'Confirm'}
+            </thead>
+            <tbody>
+              {resolvers.length === 0 && (
+                <tr>
+                  <td colSpan={5}>
+                    <EmptyState>
+                      No resolvers yet. Groups need at least one.{' '}
+                      <button type="button" className="btn btn-small btn-primary" onClick={() => setEditing('new')}>
+                        Add resolver
                       </button>
-                      <button type="button" className="btn btn-small" onClick={() => setConfirmName(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="row-actions">
-                      <button
-                        type="button"
-                        className="btn btn-small"
-                        onClick={() => setEditing(resolver)}
-                        disabled={editing !== null}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-small btn-danger-outline"
-                        disabled={resolver.groups.length > 0}
-                        title={
-                          resolver.groups.length > 0
-                            ? `Remove it from ${resolver.groups.join(', ')} first`
-                            : 'Delete this resolver'
-                        }
-                        onClick={() => setConfirmName(resolver.name)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Panel>
+                    </EmptyState>
+                  </td>
+                </tr>
+              )}
+              {resolvers.map((resolver) => {
+                const inUse = resolver.groups.length > 0;
+                const reasonId = `resolver-reason-${resolver.name}`;
+                return (
+                  <tr key={resolver.name}>
+                    <td className="col-name" data-label="Resolver">
+                      <strong>{resolver.name}</strong>
+                    </td>
+                    <td className="col-protocol" data-label="Protocol">
+                      <ProtocolBadge protocol={resolver.protocol} />
+                    </td>
+                    <td className="mono url-cell col-server" data-label="Server">
+                      <div title={resolver.url}>{resolver.url}</div>
+                    </td>
+                    <td className="col-usedby" data-label="Used by">
+                      <UsedByBadges names={resolver.groups} empty="No group" />
+                    </td>
+                    <td className="col-actions" data-label="Actions">
+                      {confirmName === resolver.name ? (
+                        <div className="row-actions">
+                          <span className="small text-red">Delete this resolver?</span>
+                          <button
+                            type="button"
+                            className="btn btn-small btn-danger"
+                            disabled={remove.isPending}
+                            onClick={() => onDelete(resolver)}
+                          >
+                            {deletingName === resolver.name ? 'Deleting...' : 'Confirm'}
+                          </button>
+                          <button type="button" className="btn btn-small" onClick={() => setConfirmName(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            data-focus-id={`edit:${resolver.name}`}
+                            className="btn btn-small"
+                            aria-label={`Edit ${resolver.name}`}
+                            onClick={() => setEditing(resolver)}
+                            disabled={editing !== null}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-small btn-danger-outline"
+                            aria-label={`Delete ${resolver.name}`}
+                            aria-describedby={inUse ? reasonId : undefined}
+                            disabled={inUse}
+                            onClick={() => setConfirmName(resolver.name)}
+                          >
+                            Delete
+                          </button>
+                          {inUse && (
+                            <span id={reasonId} className="small muted">
+                              In use by {plural(resolver.groups.length, 'group')}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
   );
 }

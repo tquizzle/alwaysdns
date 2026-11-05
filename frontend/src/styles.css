@@ -709,3 +709,19 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
   .stack .client-select { width: 100%; }
   .stack .row-actions { flex-wrap: wrap; }
 }
+
+/* Upstreams page and client dialog */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.btn-icon { min-width: 36px; padding: 5px 8px; line-height: 1; }
+.picker-item { flex-wrap: wrap; }
+.picker-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.picker-add select { flex: 1 1 220px; width: auto; }
+.col-actions .row-actions { flex-wrap: wrap; }
+.stack td.col-usedby { grid-column: 1 / -1; }
+.modal-wide { width: min(720px, 100%); }
+.client-form { display: flex; flex-direction: column; gap: 14px; }
+.client-form .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.client-form .form-grid .wide { grid-column: 1 / -1; }
+@media (max-width: 720px) {
+  .client-form .form-grid { grid-template-columns: 1fr; }
+}

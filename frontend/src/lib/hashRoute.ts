@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
-export const ROUTES = ['dashboard', 'querylog', 'lists', 'clients'] as const;
+export const ROUTES = ['dashboard', 'querylog', 'lists', 'upstreams', 'clients'] as const;
 export type Route = (typeof ROUTES)[number];
 
 function currentRoute(): Route {
@@ -13,7 +13,7 @@ function subscribe(onChange: () => void): () => void {
   return () => window.removeEventListener('hashchange', onChange);
 }
 
-/** Minimal hash router: #/dashboard, #/querylog, #/lists, #/clients. */
+/** Minimal hash router: #/dashboard, #/querylog, #/lists, #/upstreams, #/clients. */
 export function useHashRoute(): [Route, (route: Route) => void] {
   const route = useSyncExternalStore(subscribe, currentRoute, () => 'dashboard' as Route);
   const navigate = useCallback((next: Route) => {

@@ -8,11 +8,13 @@ import { Dashboard } from './pages/Dashboard';
 import { QueryLogPage } from './pages/QueryLogPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { ListsPage } from './pages/ListsPage';
+import { UpstreamsPage } from './pages/UpstreamsPage';
 
-const NAV: { route: Route; label: string }[] = [
+const NAV: { route: Route; label: string; adminOnly?: boolean }[] = [
   { route: 'dashboard', label: 'Dashboard' },
   { route: 'querylog', label: 'Query log' },
   { route: 'lists', label: 'Lists' },
+  { route: 'upstreams', label: 'Upstreams', adminOnly: true },
   { route: 'clients', label: 'Clients' },
 ];
 
@@ -43,8 +45,10 @@ export function App() {
 }
 
 function Shell({ username, role }: { username: string; role: string }) {
-  const [route, navigate] = useHashRoute();
+  const [requested, navigate] = useHashRoute();
   const isAdmin = role === 'admin';
+  // Viewers have no Upstreams page. A pasted #/upstreams link falls back to the dashboard.
+  const route: Route = requested === 'upstreams' && !isAdmin ? 'dashboard' : requested;
 
   return (
     <div className="app">
@@ -55,7 +59,7 @@ function Shell({ username, role }: { username: string; role: string }) {
         </div>
 
         <nav className="nav" aria-label="Main">
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (
             <a
               key={item.route}
               href={`#/${item.route}`}
@@ -82,6 +86,7 @@ function Shell({ username, role }: { username: string; role: string }) {
           {route === 'dashboard' && <Dashboard />}
           {route === 'querylog' && <QueryLogPage />}
           {route === 'lists' && <ListsPage isAdmin={isAdmin} />}
+          {route === 'upstreams' && <UpstreamsPage />}
           {route === 'clients' && <ClientsPage />}
         </ErrorBoundary>
       </main>

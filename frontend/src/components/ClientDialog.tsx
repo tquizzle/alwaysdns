@@ -79,7 +79,7 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
   };
 
   return (
-    <Modal title={client ? `Edit ${client.name}` : 'Add a client'} onClose={onClose}>
+    <Modal title={client ? `Edit ${client.name}` : 'Add a client'} onClose={onClose} wide>
       <form className="client-form" onSubmit={onSubmit} noValidate>
         <div className="form-grid">
           <label className="field">
@@ -92,14 +92,17 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
               onChange={(e) => setName(e.target.value)}
             />
           </label>
-          <label className="field">
-            <span>Upstream group</span>
-            <select value={group} onChange={(e) => setGroup(e.target.value)}>
+          <div className="field">
+            <span id="client-group-label">Upstream group</span>
+            <select aria-labelledby="client-group-label" value={group} onChange={(e) => setGroup(e.target.value)}>
               {groups.map((g) => (
                 <option key={g} value={g}>{g}</option>
               ))}
             </select>
-          </label>
+            <a className="small" href="#/upstreams" onClick={onClose}>
+              Manage upstream groups
+            </a>
+          </div>
           <label className="field wide">
             <span>Networks, one per line (CIDR)</span>
             <textarea

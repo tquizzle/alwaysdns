@@ -3,6 +3,8 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 're
 interface Props {
   title: string;
   onClose: () => void;
+  /** Wider dialog for forms with several columns. */
+  wide?: boolean;
   children: ReactNode;
 }
 
@@ -34,7 +36,7 @@ function trapTab(e: KeyboardEvent<HTMLElement>, root: HTMLElement) {
  * backdrop click. Moves focus in when it opens, keeps Tab inside, locks page
  * scroll, and gives focus back to the element that opened it.
  */
-export function Modal({ title, onClose, children }: Props) {
+export function Modal({ title, onClose, wide = false, children }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -72,7 +74,7 @@ export function Modal({ title, onClose, children }: Props) {
     >
       <div
         ref={dialogRef}
-        className="modal panel"
+        className={`modal panel ${wide ? 'modal-wide' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
