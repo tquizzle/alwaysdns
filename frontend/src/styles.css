@@ -301,7 +301,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .dash-grid > * { min-width: 0; margin: 0; }
 .dash-span { grid-column: 1 / -1; }
 .dash-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-.dash-hero { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 420px; }
 .dash-cell { display: flex; flex-direction: column; }
 
 /* KPI cards */
@@ -356,8 +355,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   color: var(--cyan); text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.6);
   font-variant-numeric: tabular-nums;
 }
-.hero-caption { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.hero-rate { font-family: var(--mono); font-size: 1.6rem; color: var(--red); text-shadow: 0 0 12px rgba(var(--red-rgb), 0.5); }
 
 .upstream-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 .upstream-card { border: 1px solid var(--border-soft); border-radius: 8px; padding: 12px; background: rgba(5, 14, 31, 0.4); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -574,8 +571,7 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
   .nav { order: 3; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .nav a { white-space: nowrap; }
   .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dash-hero { min-height: 340px; }
-  .kpi-number { --kpi-max: 1.5rem; }
+    .kpi-number { --kpi-max: 1.5rem; }
   .filters { flex-direction: column; align-items: stretch; }
   .field.narrow { width: 100%; }
   /* In a column, flex-basis is a height. Reset the row-layout bases so fields keep their natural height. */
@@ -727,4 +723,31 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
 .client-form .form-grid .wide { grid-column: 1 / -1; }
 @media (max-width: 720px) {
   .client-form .form-grid { grid-template-columns: 1fr; }
+}
+
+/* Dashboard top: the block-rate orb beside compact upstream cards, then the KPI cards. */
+.dash-top-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; }
+.dash-health { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.health-line { margin: 0; font-size: 0.95rem; }
+.health-line strong { color: var(--green); font-weight: 600; }
+.health-line.is-degraded strong { color: var(--yellow); }
+.hero-number.is-red { color: var(--red); text-shadow: 0 0 18px rgba(var(--red-rgb), 0.5); }
+.upstream-grid.compact { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.upstream-card.is-compact { padding: 8px 10px; gap: 6px; }
+.is-compact .upstream-rings { justify-content: flex-start; gap: 14px; }
+.is-compact .mini-text { font-size: 0.78rem; }
+.is-compact .mini-text small { display: block; font-size: 0.75rem; line-height: 1; }
+.is-compact .upstream-foot { font-size: 0.75rem; }
+
+/* Blocked panel, domain links and the collapsed traffic insight */
+.blocked-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; }
+.sub-head { margin: 0 0 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; }
+.bar-name a { color: inherit; text-decoration: none; }
+.bar-name a:hover { color: var(--cyan); text-decoration: underline; }
+details.insight > summary { cursor: pointer; font-weight: 600; color: var(--accent-soft); list-style-position: inside; }
+details.insight[open] > summary { margin-bottom: 12px; }
+@media (max-width: 900px) {
+  .dash-top-grid { grid-template-columns: 1fr; justify-items: center; }
+  .dash-health { width: 100%; }
+  .blocked-split { grid-template-columns: 1fr; }
 }

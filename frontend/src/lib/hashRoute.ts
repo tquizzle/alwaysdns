@@ -4,8 +4,15 @@ export const ROUTES = ['dashboard', 'querylog', 'lists', 'upstreams', 'clients']
 export type Route = (typeof ROUTES)[number];
 
 function currentRoute(): Route {
-  const raw = window.location.hash.replace(/^#\/?/, '');
+  // A query such as #/querylog?domain=example.com carries a starting filter, not a different page.
+  const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? '';
   return (ROUTES as readonly string[]).includes(raw) ? (raw as Route) : 'dashboard';
+}
+
+/** A value from the hash's query part, such as `domain` in #/querylog?domain=example.com. */
+export function hashParam(name: string): string | null {
+  const query = window.location.hash.split('?')[1];
+  return query ? new URLSearchParams(query).get(name) : null;
 }
 
 function subscribe(onChange: () => void): () => void {

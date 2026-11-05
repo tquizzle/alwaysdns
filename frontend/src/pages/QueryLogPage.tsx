@@ -5,6 +5,7 @@ import { QueryLogTable } from '../components/QueryLogTable';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { ErrorState, LoadingState, Notice, type NoticeState } from '../components/States';
 import { formatInt, formatTime } from '../lib/format';
+import { hashParam } from '../lib/hashRoute';
 import { usePrefs } from '../lib/prefs';
 import { RESULT_FILTERS, TIME_PRESETS, timeRangeToQuery, type TimePreset } from '../lib/querylog';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
@@ -14,7 +15,8 @@ const POLL_NOTE_SECONDS = 3;
 
 export function QueryLogPage() {
   const { redactAddresses } = usePrefs();
-  const [domain, setDomain] = useState('');
+  // Links from the dashboard arrive as #/querylog?domain=example.com.
+  const [domain, setDomain] = useState(() => hashParam('domain') ?? '');
   const [client, setClient] = useState('');
   const [result, setResult] = useState<ResultFilter>('');
   const [preset, setPreset] = useState<TimePreset>('day');

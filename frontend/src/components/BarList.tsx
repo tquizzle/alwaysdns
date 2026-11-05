@@ -7,6 +7,8 @@ interface Props {
   emptyText: string;
   /** Show this many rows and scroll for the rest. Omit to show every row. */
   maxRows?: number;
+  /** Makes each name a link to the returned target. */
+  linkTo?: (name: string) => string;
 }
 
 // Row geometry, matching the bar-list CSS: meta line and bar, then the gap.
@@ -21,7 +23,7 @@ function heightFor(rows: number, withReasons: boolean): number {
 }
 
 /** Horizontal bars for ranked names, scaled to the largest count. */
-export function BarList({ items, tone, emptyText, maxRows }: Props) {
+export function BarList({ items, tone, emptyText, maxRows, linkTo }: Props) {
   if (items.length === 0) {
     return <div className="state state-empty">{emptyText}</div>;
   }
@@ -31,7 +33,9 @@ export function BarList({ items, tone, emptyText, maxRows }: Props) {
       {items.map((item) => (
         <li key={item.name} className={`bar-row tone-${tone}`}>
           <div className="bar-meta">
-            <span className="bar-name" title={item.name}>{item.name}</span>
+            <span className="bar-name" title={item.name}>
+              {linkTo ? <a href={linkTo(item.name)}>{item.name}</a> : item.name}
+            </span>
             <span className="bar-count">{formatInt(item.count)}</span>
           </div>
           {item.reason && (

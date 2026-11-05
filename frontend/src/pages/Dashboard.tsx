@@ -11,11 +11,12 @@ import { Panel } from '../components/Panel';
 import { QueryLogTable } from '../components/QueryLogTable';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { HistoryPanel } from '../components/HistoryPanel';
-import { EmptyState, ErrorState, LoadingState } from '../components/States';
+import { EmptyState, ErrorState, LoadingState, Notice } from '../components/States';
 import {
   clamp01,
   formatInt,
   formatPercent,
+  formatTime,
   ratioOf,
   splitMs,
 } from '../lib/format';
@@ -45,11 +46,18 @@ const COLOR = {
   green: '#4ade80',
 };
 
+const NO_TRAFFIC_HINT = "No domains yet. Point a device's DNS at this server to see traffic.";
+
 function latencyTone(ms: number): string {
   if (!Number.isFinite(ms)) return COLOR.yellow;
   if (ms < 100) return COLOR.green;
   if (ms < 250) return COLOR.yellow;
   return COLOR.red;
+}
+
+/** Link target that opens the query log filtered to one domain. */
+function queryLogLink(domain: string): string {
+  return `#/querylog?domain=${encodeURIComponent(domain)}`;
 }
 
 export function Dashboard() {
@@ -67,6 +75,11 @@ export function Dashboard() {
         <SegmentedControl label="Time range" options={RANGE_OPTIONS} value={range} onChange={setRange} />
       </div>
 
+      {data && stats.isError && (
+        <Notice tone="error">
+          Could not refresh. Showing the last update from {formatTime(stats.dataUpdatedAt)}.
+        </Notice>
+      )}
       {!data && stats.isPending && <LoadingState label="Loading statistics" />}
       {!data && stats.isError && <ErrorState error={stats.error} onRetry={() => stats.refetch()} />}
       {data && <DashboardBody stats={data} />}
@@ -76,12 +89,22 @@ export function Dashboard() {
   );
 }
 
+/** Which resolvers are healthy, as one line a glance can read. */
+function healthSummary(upstreams: UpstreamStatus[], avgMs: number): { text: string; degraded: boolean } {
+  if (upstreams.length === 0) return { text: 'No resolvers reported.', degraded: true };
+  const up = upstreams.filter((u) => u.ok).length;
+  const latency = splitMs(avgMs);
+  const average = Number.isFinite(avgMs) ? ` · average ${latency.value} ${latency.unit}` : '';
+  return { text: `${up} of ${upstreams.length} resolvers up${average}`, degraded: up < upstreams.length };
+}
+
 function DashboardBody({ stats }: { stats: Stats }) {
   const blockRate = Number.isFinite(stats.block_rate)
     ? stats.block_rate
     : ratioOf(stats.blocked, stats.total) ?? 0;
   const latency = splitMs(stats.avg_ms);
   const upstreamsOk = stats.upstreams.filter((u) => u.ok).length;
+  const health = healthSummary(stats.upstreams, stats.avg_ms);
 
   const kpis: { label: string; value: string; unit?: string; pct?: string; tone: Tone }[] = [
     { label: 'Queries', value: formatInt(stats.total), tone: 'cyan' },
@@ -121,26 +144,37 @@ function DashboardBody({ stats }: { stats: Stats }) {
     // One shared two-column grid: every panel sits on the same column lines.
     // Rows that need the full width carry the dash-span class.
     <div className="dash-grid">
+      <section className="panel dash-span" aria-label="Resolver health and block rate">
+        <div className="dash-top-grid">
+          <Gauge value={blockRate} size={240} stroke={12} color={COLOR.red} orb label={`Block rate ${formatPercent(blockRate)}`}>
+            <div className="hero-total">
+              <span className="hero-label">Block rate</span>
+              <span className="hero-number is-red">{formatPercent(blockRate)}</span>
+              <span className="hero-label">{formatInt(stats.blocked)} of {formatInt(stats.total)}</span>
+            </div>
+          </Gauge>
+          <div className="dash-health">
+            <p className={`health-line ${health.degraded ? 'is-degraded' : ''}`}>
+              <strong>{health.text}</strong>
+            </p>
+            {stats.upstreams.length > 0 && (
+              <div className="upstream-grid compact">
+                {stats.upstreams.map((u) => (
+                  <UpstreamCard key={u.name} upstream={u} compact />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <aside className="dash-kpis dash-span" aria-label="Key figures">
         {kpis.map((k) => (
           <KpiCard key={k.label} {...k} />
         ))}
       </aside>
 
-      <section className="dash-hero panel" aria-label="Block rate">
-        <Gauge value={blockRate} size={300} stroke={14} color={COLOR.red} orb label={`Block rate ${formatPercent(blockRate)}`}>
-          <div className="hero-total">
-            <span className="hero-label">Total queries</span>
-            <span className="hero-number">{formatInt(stats.total)}</span>
-          </div>
-        </Gauge>
-        <div className="hero-caption">
-          <span className="hero-rate">{formatPercent(blockRate)}</span>
-          <span className="muted">block rate</span>
-        </div>
-      </section>
-
-      <Panel title="Queries and blocks" className="dash-cell">
+      <Panel title="Queries and blocks" className="dash-span">
         {stats.timeline.length === 0 ? (
           <EmptyState>No traffic recorded in this range yet.</EmptyState>
         ) : (
@@ -149,78 +183,83 @@ function DashboardBody({ stats }: { stats: Stats }) {
       </Panel>
 
       <Panel title="Top domains" className="dash-cell">
-        <BarList items={stats.top_domains} tone="cyan" emptyText="No domains yet." maxRows={5} />
+        <BarList items={stats.top_domains} tone="cyan" emptyText={NO_TRAFFIC_HINT} maxRows={5} linkTo={queryLogLink} />
       </Panel>
       <Panel title="Root domains" subtitle="Each domain with all its subdomains" className="dash-cell">
-        <BarList items={stats.root_domains ?? []} tone="cyan" emptyText="No domains yet." maxRows={5} />
+        <BarList items={stats.root_domains ?? []} tone="cyan" emptyText={NO_TRAFFIC_HINT} maxRows={5} />
       </Panel>
 
-      <Panel title="Top blocked" subtitle="With the list that blocked each one" className="dash-cell">
-        <BarList items={stats.top_blocked} tone="red" emptyText="Nothing blocked yet." maxRows={5} />
-      </Panel>
-      <Panel title="Reasons for blocking" subtitle="Blocked queries by source" className="dash-cell">
-        <BarList items={stats.block_reasons ?? []} tone="red" emptyText="Nothing blocked yet." maxRows={5} />
-      </Panel>
-
-      {/* One row, one third for GAFAM and two thirds for the map, so the map has room. */}
-      <div className="dash-insights dash-span">
-        <Panel title="GAFAM dominance" subtitle="Share of all queries by company" className="dash-cell">
-          <CompanyDonut companies={stats.companies ?? []} total={stats.total} />
-        </Panel>
-        <Panel title="Traffic destination" subtitle="Countries the answers pointed to" className="dash-cell">
-          <TrafficMap countries={stats.countries ?? []} geoReady={stats.geo_ready === true} />
-        </Panel>
-      </div>
-
-      <Panel title="Upstreams" className="dash-span">
-        {stats.upstreams.length === 0 ? (
-          <EmptyState>No upstreams reported.</EmptyState>
-        ) : (
-          <div className="upstream-grid">
-            {stats.upstreams.map((u) => (
-              <UpstreamCard key={u.name} upstream={u} />
-            ))}
+      <Panel title="Blocked" subtitle="Click a domain to see its queries in the log" className="dash-span">
+        <div className="blocked-split">
+          <div>
+            <h3 className="sub-head">Top blocked, with the list that blocked each</h3>
+            <BarList items={stats.top_blocked} tone="red" emptyText="Nothing blocked yet." maxRows={5} linkTo={queryLogLink} />
           </div>
-        )}
+          <div>
+            <h3 className="sub-head">Blocked queries by list</h3>
+            <BarList items={stats.block_reasons ?? []} tone="red" emptyText="Nothing blocked yet." maxRows={5} />
+          </div>
+        </div>
       </Panel>
+
       <LiveLog className="dash-span" />
+
+      <details className="panel insight dash-span">
+        <summary>Traffic insight: who the queries go to, and where answers point</summary>
+        <div className="dash-insights">
+          <Panel title="GAFAM dominance" subtitle="Share of all queries by company" className="dash-cell">
+            <CompanyDonut companies={stats.companies ?? []} total={stats.total} />
+          </Panel>
+          <Panel title="Traffic destination" subtitle="Countries the answers pointed to" className="dash-cell">
+            <TrafficMap countries={stats.countries ?? []} geoReady={stats.geo_ready === true} />
+          </Panel>
+        </div>
+      </details>
     </div>
   );
 }
 
-function UpstreamCard({ upstream }: { upstream: UpstreamStatus }) {
+interface UpstreamCardProps {
+  upstream: UpstreamStatus;
+  /** Smaller rings and no captions, for the cards beside the block-rate orb. */
+  compact?: boolean;
+}
+
+function UpstreamCard({ upstream, compact = false }: UpstreamCardProps) {
   // The probe median is the steady figure. Live averages only cover servers that have traffic.
   const probed = upstream.probe_p50_ms != null;
   const latencyMs = probed ? (upstream.probe_p50_ms as number) : upstream.avg_ms;
   const lat = splitMs(latencyMs);
   const statusColor = upstream.ok ? COLOR.green : COLOR.red;
   const latColor = latencyTone(latencyMs);
+  const ring = compact ? 64 : 96;
+  const stroke = compact ? 6 : 8;
   return (
-    <div className="upstream-card">
+    <div className={`upstream-card ${compact ? 'is-compact' : ''}`}>
       <div className="upstream-head">
         <span className="upstream-name" title={upstream.url ?? upstream.name}>{upstream.name}</span>
         {upstream.protocol && <span className="badge badge-cyan">{PROTOCOL_LABEL[upstream.protocol]}</span>}
       </div>
       <div className="upstream-rings">
         <div className="mini">
-          <Gauge value={upstream.ok ? 1 : 0} size={96} stroke={8} color={statusColor} label={`${upstream.name} status ${upstream.ok ? 'ok' : 'down'}`}>
+          <Gauge value={upstream.ok ? 1 : 0} size={ring} stroke={stroke} color={statusColor} label={`${upstream.name} status ${upstream.ok ? 'ok' : 'down'}`}>
             <span className="mini-text" style={{ color: statusColor }}>{upstream.ok ? 'OK' : 'DOWN'}</span>
           </Gauge>
-          <span className="mini-caption">Status</span>
+          {!compact && <span className="mini-caption">Status</span>}
         </div>
         <div className="mini">
-          <Gauge value={clamp01(latencyMs / 500)} size={96} stroke={8} color={latColor} label={`${upstream.name} ${probed ? 'probe median' : 'live average'} latency ${lat.value} ${lat.unit}`}>
+          <Gauge value={clamp01(latencyMs / 500)} size={ring} stroke={stroke} color={latColor} label={`${upstream.name} ${probed ? 'probe median' : 'live average'} latency ${lat.value} ${lat.unit}`}>
             <span className="mini-text">{lat.value}<small> {lat.unit}</small></span>
           </Gauge>
-          <span className="mini-caption">{probed ? 'Probe median' : 'Live average'}</span>
+          {!compact && <span className="mini-caption">{probed ? 'Probe median' : 'Live average'}</span>}
         </div>
       </div>
       <div className="upstream-foot">
         <span className={upstream.errors > 0 ? 'text-red' : 'muted'}>{formatInt(upstream.errors)} errors</span>
-        {upstream.probe_p95_ms != null && (
+        {!compact && upstream.probe_p95_ms != null && (
           <span className="muted"> · p95 {Math.round(upstream.probe_p95_ms)} ms</span>
         )}
-        {probed && upstream.avg_ms > 0 && (
+        {!compact && probed && upstream.avg_ms > 0 && (
           <span className="muted"> · live {Math.round(upstream.avg_ms)} ms</span>
         )}
       </div>
