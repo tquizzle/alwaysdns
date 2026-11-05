@@ -72,7 +72,9 @@ export function DataTable<T>({
                   <th
                     key={header.id}
                     scope="col"
-                    aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
+                    aria-sort={
+                      !sortableColumn ? undefined : dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'
+                    }
                     className={`col-${header.column.id}`}
                   >
                     {header.isPlaceholder ? null : sortableColumn ? (

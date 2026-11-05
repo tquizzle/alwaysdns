@@ -1,5 +1,5 @@
 import { createColumnHelper, type SortingState } from '@tanstack/react-table';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { QueryLogEntry } from '../api/types';
 import { formatDateTime, formatMs, formatTime, orDash, parseTimestamp } from '../lib/format';
 import { redactDisplay } from '../lib/redact';
@@ -19,7 +19,7 @@ export function resultClass(result: string): string {
     case 'rewritten':
       return 'badge badge-yellow';
     case 'error':
-      return 'badge badge-red';
+      return 'badge badge-error';
     default:
       return 'badge';
   }
@@ -40,6 +40,68 @@ interface Props {
 
 const SORTING: SortingState = [{ id: 'time', desc: true }];
 
+/** Identity of a log row, stable across live refreshes that shift rows down the page. */
+function entryKey(entry: QueryLogEntry): string {
+  return `${entry.time}|${entry.client}|${entry.domain}|${entry.qtype}`;
+}
+
+interface BlockCellProps {
+  entry: QueryLogEntry;
+  armed: boolean;
+  busy: boolean;
+  onArm: (open: boolean) => void;
+  onBlock: (entry: QueryLogEntry, scope: 'device' | 'everyone') => void;
+}
+
+/** One quiet Block button per row. It opens a choice of scope, so a stray click never blocks anything. */
+function BlockCell({ entry, armed, busy, onArm, onBlock }: BlockCellProps) {
+  // "unknown" means no configured client matched, so there is no device to block for.
+  const hasDevice = entry.client !== 'unknown' && entry.client !== '';
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        className="btn btn-small"
+        disabled={busy}
+        aria-label={`Block ${entry.domain}`}
+        aria-haspopup="true"
+        onClick={() => onArm(true)}
+      >
+        Block…
+      </button>
+    );
+  }
+  const choose = (scope: 'device' | 'everyone') => {
+    onArm(false);
+    onBlock(entry, scope);
+  };
+  return (
+    <div className="row-actions" role="group" aria-label={`Block ${entry.domain} for`}>
+      <button
+        type="button"
+        className="btn btn-small btn-danger-outline"
+        disabled={!hasDevice}
+        aria-label={`Block ${entry.domain} for ${entry.client} only`}
+        title={hasDevice ? undefined : 'No configured device matched this query'}
+        onClick={() => choose('device')}
+      >
+        This device
+      </button>
+      <button
+        type="button"
+        className="btn btn-small btn-danger-outline"
+        aria-label={`Block ${entry.domain} for every device`}
+        onClick={() => choose('everyone')}
+      >
+        Everyone
+      </button>
+      <button type="button" className="btn btn-small" aria-label="Cancel blocking" onClick={() => onArm(false)}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 export function QueryLogTable({
   items,
   redact,
@@ -49,6 +111,7 @@ export function QueryLogTable({
   onBlock,
   blockingDomain = null,
 }: Props) {
+  const [armedKey, setArmedKey] = useState<string | null>(null);
   const columns = useMemo(
     () => [
       helper.accessor('time', {
@@ -106,35 +169,20 @@ export function QueryLogTable({
         header: 'Block',
         cell: ({ row }) => {
           const entry = row.original;
-          const busy = blockingDomain === entry.domain;
-          // "unknown" means no configured client matched, so there is no device to block for.
-          const hasDevice = entry.client !== 'unknown' && entry.client !== '';
+          const key = entryKey(entry);
           return (
-            <div className="row-actions">
-              <button
-                type="button"
-                className="btn btn-small btn-danger-outline"
-                disabled={busy || !hasDevice}
-                title={hasDevice ? `Block ${entry.domain} for ${entry.client}` : 'No configured device matched this query'}
-                onClick={() => onBlock(entry, 'device')}
-              >
-                This device
-              </button>
-              <button
-                type="button"
-                className="btn btn-small btn-danger-outline"
-                disabled={busy}
-                title={`Block ${entry.domain} for every device`}
-                onClick={() => onBlock(entry, 'everyone')}
-              >
-                Everyone
-              </button>
-            </div>
+            <BlockCell
+              entry={entry}
+              armed={armedKey === key}
+              busy={blockingDomain === entry.domain}
+              onArm={(open) => setArmedKey(open ? key : null)}
+              onBlock={onBlock}
+            />
           );
         },
       }),
     ];
-  }, [columns, onBlock, blockingDomain]);
+  }, [columns, onBlock, blockingDomain, armedKey]);
 
   return (
     <DataTable

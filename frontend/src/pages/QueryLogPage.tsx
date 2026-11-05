@@ -23,6 +23,8 @@ export function QueryLogPage() {
   const [pageSize, setPageSize] = useState(50);
   const [pageIndex, setPageIndex] = useState(0);
   const [live, setLive] = useState(true);
+  // Rows move when live data arrives, so refreshing waits while the pointer or focus is on the table.
+  const [holding, setHolding] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const me = useMe();
   const isAdmin = me.data?.role === 'admin';
@@ -61,7 +63,7 @@ export function QueryLogPage() {
   };
 
   // Live refresh only applies to the first page with no offset.
-  const log = useQueryLog(params, live && isFirstPage, bounds.error === undefined);
+  const log = useQueryLog(params, live && isFirstPage && !holding, bounds.error === undefined);
 
   const items = log.data?.items ?? [];
   const total = log.data?.total ?? 0;
@@ -78,9 +80,11 @@ export function QueryLogPage() {
 
   const liveNote = !live
     ? 'Live updates paused.'
-    : isFirstPage
-      ? `Refreshing every ${POLL_NOTE_SECONDS} seconds.`
-      : 'Live updates apply to the first page only.';
+    : !isFirstPage
+      ? 'Live updates apply to the first page only.'
+      : holding
+        ? 'Paused while you use the table.'
+        : `Refreshing every ${POLL_NOTE_SECONDS} seconds.`;
 
   return (
     <div className="page">
@@ -90,6 +94,7 @@ export function QueryLogPage() {
           <p className="muted small">
             {liveNote}
             {log.dataUpdatedAt && live && isFirstPage ? ` Last update ${formatTime(log.dataUpdatedAt)}.` : ''}
+            {log.isError && log.data ? ' Could not refresh, showing the last results.' : ''}
           </p>
         </div>
         <button
@@ -239,14 +244,23 @@ export function QueryLogPage() {
               </nav>
             </div>
             {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-            <QueryLogTable
-              items={items}
-              redact={redactAddresses}
-              pagination={{ pageIndex, pageSize, pageCount }}
-              emptyText="No queries match these filters."
-              onBlock={isAdmin ? onBlock : undefined}
-              blockingDomain={blockingDomain}
-            />
+            <div
+              onMouseEnter={() => setHolding(true)}
+              onMouseLeave={() => setHolding(false)}
+              onFocus={() => setHolding(true)}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget)) setHolding(false);
+              }}
+            >
+              <QueryLogTable
+                items={items}
+                redact={redactAddresses}
+                pagination={{ pageIndex, pageSize, pageCount }}
+                emptyText="No queries match these filters."
+                onBlock={isAdmin ? onBlock : undefined}
+                blockingDomain={blockingDomain}
+              />
+            </div>
           </>
         )}
       </div>
