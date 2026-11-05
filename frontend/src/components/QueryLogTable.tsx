@@ -80,7 +80,10 @@ export function QueryLogTable({
       }),
       helper.accessor('upstream', {
         header: 'Upstream',
-        cell: (info) => orDash(info.getValue()),
+        cell: (info) => {
+          const entry = info.row.original;
+          return <span title={entry.upstream}>{orDash(entry.upstream_name ?? entry.upstream)}</span>;
+        },
       }),
       helper.accessor('elapsed_ms', {
         header: 'Latency',

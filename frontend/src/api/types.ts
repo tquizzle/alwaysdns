@@ -29,7 +29,11 @@ export interface NameCount {
 }
 
 export interface UpstreamStatus {
+  /** The resolver's friendly name, or the URL when it has none. */
   name: string;
+  /** The server URL. Absent when the stats come from a source that does not report it. */
+  url?: string;
+  protocol?: Protocol;
   /** False after three failures in a row, live or probe. */
   ok: boolean;
   /** Average of live client queries, in ms. */
@@ -75,6 +79,8 @@ export interface QueryLogEntry {
   /** Known values: "blocked" | "cached" | "forwarded" | "allowed" | "rewritten" | "error". Others render neutrally. */
   result: string;
   upstream: string;
+  /** The resolver's friendly name, when a resolver has this upstream's URL. */
+  upstream_name?: string;
   elapsed_ms: number;
   /** Matched rule, or empty string when none. */
   rule: string;
@@ -204,10 +210,22 @@ export interface Client {
   blocked: number;
 }
 
+/** DNS-over-HTTPS or DNS-over-QUIC, from the URL scheme. */
+export type Protocol = 'doh' | 'doq';
+
+/** Admin only: a named upstream server and the groups that list it. */
+export interface Resolver {
+  name: string;
+  url: string;
+  protocol: Protocol | null;
+  groups: string[];
+}
+
 /** Admin only: an upstream group and the clients that name it. */
 export interface UpstreamGroup {
   name: string;
-  upstreams: string[];
+  /** Resolver names, in failover order. */
+  resolvers: string[];
   clients: string[];
   is_default: boolean;
 }
@@ -215,6 +233,7 @@ export interface UpstreamGroup {
 export interface ClientsResponse {
   clients: Client[];
   upstream_groups: UpstreamGroup[];
+  resolvers: Resolver[];
 }
 
 /** The full rule set for one client. Every save sends all of it. `name` is used only when creating. */
@@ -229,11 +248,18 @@ export interface ClientUpdateBody {
 
 export interface GroupCreateBody {
   name: string;
-  upstreams: string[];
+  /** Resolver names, in failover order. */
+  resolvers: string[];
 }
 
 export interface GroupUpdateBody {
-  upstreams: string[];
+  resolvers: string[];
+}
+
+/** Adds a resolver, or changes one. A different `name` on update renames it. */
+export interface ResolverBody {
+  name: string;
+  url: string;
 }
 
 export interface Health {

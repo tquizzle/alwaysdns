@@ -20,6 +20,7 @@ import {
   splitMs,
 } from '../lib/format';
 import { usePrefs } from '../lib/prefs';
+import { PROTOCOL_LABEL } from '../lib/resolvers';
 
 const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
   { value: 'hour', label: 'Hour' },
@@ -196,7 +197,10 @@ function UpstreamCard({ upstream }: { upstream: UpstreamStatus }) {
   const latColor = latencyTone(latencyMs);
   return (
     <div className="upstream-card">
-      <div className="upstream-name" title={upstream.name}>{upstream.name}</div>
+      <div className="upstream-head">
+        <span className="upstream-name" title={upstream.url ?? upstream.name}>{upstream.name}</span>
+        {upstream.protocol && <span className="badge badge-cyan">{PROTOCOL_LABEL[upstream.protocol]}</span>}
+      </div>
       <div className="upstream-rings">
         <div className="mini">
           <Gauge value={upstream.ok ? 1 : 0} size={96} stroke={8} color={statusColor} label={`${upstream.name} status ${upstream.ok ? 'ok' : 'down'}`}>

@@ -4,6 +4,7 @@ import type { Client, ClientUpdateBody } from '../api/types';
 import { ClientDialog } from '../components/ClientDialog';
 import { ClientsTable } from '../components/ClientsTable';
 import { Panel } from '../components/Panel';
+import { ResolversPanel } from '../components/ResolversPanel';
 import { UpstreamGroupsPanel } from '../components/UpstreamGroupsPanel';
 import { ErrorState, LoadingState, Notice, type NoticeState } from '../components/States';
 import { formatInt } from '../lib/format';
@@ -109,7 +110,8 @@ export function ClientsPage() {
             />
           </Panel>
 
-          {isAdmin && <UpstreamGroupsPanel groups={clients.data.upstream_groups} />}
+          {isAdmin && <ResolversPanel resolvers={clients.data.resolvers} />}
+          {isAdmin && <UpstreamGroupsPanel groups={clients.data.upstream_groups} resolvers={clients.data.resolvers} />}
         </>
       )}
 

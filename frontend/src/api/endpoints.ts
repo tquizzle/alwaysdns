@@ -23,6 +23,7 @@ import type {
   QueryLogResponse,
   RangeKey,
   RefreshListsResponse,
+  ResolverBody,
   Stats,
 } from './types';
 
@@ -88,6 +89,15 @@ export const api = {
 
   deleteGroup: (name: string) =>
     apiRequest<OkResponse>(`/api/upstream-groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  createResolver: (body: ResolverBody) =>
+    apiRequest<OkResponse>('/api/resolvers', { method: 'POST', json: body }),
+
+  updateResolver: (name: string, body: ResolverBody) =>
+    apiRequest<OkResponse>(`/api/resolvers/${encodeURIComponent(name)}`, { method: 'PUT', json: body }),
+
+  deleteResolver: (name: string) =>
+    apiRequest<OkResponse>(`/api/resolvers/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 
   health: () => apiRequest<Health>('/api/health', { skipUnauthorized: true }),
 };

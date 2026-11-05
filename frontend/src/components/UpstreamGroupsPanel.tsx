@@ -1,60 +1,124 @@
 import { useState, type FormEvent } from 'react';
 import { useCreateGroup, useDeleteGroup, useUpdateGroup } from '../api/queries';
-import type { UpstreamGroup } from '../api/types';
+import type { Resolver, UpstreamGroup } from '../api/types';
+import { PROTOCOL_LABEL, moveItem } from '../lib/resolvers';
 import { Notice, type NoticeState } from './States';
 import { Panel } from './Panel';
+import { ProtocolBadge } from './ResolversPanel';
 
 const GROUP_NAME_MAX = 64;
 
-/** Returns an error message, or null when the upstream URL is usable. */
-function upstreamError(raw: string): string | null {
-  const value = raw.trim();
-  if (!value.startsWith('https://') && !value.startsWith('quic://')) {
-    return `"${value}" must start with https:// (DoH) or quic:// (DoQ)`;
-  }
-  try {
-    new URL(value);
-  } catch {
-    return `"${value}" is not a valid URL`;
-  }
-  return null;
+interface PickerProps {
+  /** Every resolver that exists. */
+  resolvers: Resolver[];
+  /** The chosen resolver names, in failover order. */
+  selected: string[];
+  onChange: (next: string[]) => void;
+}
+
+/** Ordered list of the chosen resolvers, with a dropdown to add the rest. */
+function ResolverPicker({ resolvers, selected, onChange }: PickerProps) {
+  const byName = new Map(resolvers.map((r) => [r.name, r]));
+  const available = resolvers.filter((r) => !selected.includes(r.name));
+
+  return (
+    <div className="field wide">
+      <span>Resolvers, tried in order</span>
+      {selected.length === 0 ? (
+        <p className="muted small">None chosen yet.</p>
+      ) : (
+        <ol className="picker-list">
+          {selected.map((name, index) => (
+            <li key={name} className="picker-item">
+              <span className="picker-index mono">{index + 1}</span>
+              <span className="picker-name" title={byName.get(name)?.url ?? name}>{name}</span>
+              <ProtocolBadge protocol={byName.get(name)?.protocol} />
+              <span className="row-actions">
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  aria-label={`Move ${name} up`}
+                  disabled={index === 0}
+                  onClick={() => onChange(moveItem(selected, index, -1))}
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  aria-label={`Move ${name} down`}
+                  disabled={index === selected.length - 1}
+                  onClick={() => onChange(moveItem(selected, index, 1))}
+                >
+                  Down
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-small btn-danger-outline"
+                  aria-label={`Remove ${name}`}
+                  onClick={() => onChange(selected.filter((n) => n !== name))}
+                >
+                  Remove
+                </button>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <select
+        aria-label="Add a resolver"
+        value=""
+        disabled={available.length === 0}
+        onChange={(e) => {
+          if (e.target.value) onChange([...selected, e.target.value]);
+        }}
+      >
+        <option value="">
+          {resolvers.length === 0
+            ? 'Add a resolver first'
+            : available.length === 0
+              ? 'Every resolver is already in this group'
+              : 'Add a resolver...'}
+        </option>
+        {available.map((r) => (
+          <option key={r.name} value={r.name}>
+            {r.name}
+            {r.protocol ? ` (${PROTOCOL_LABEL[r.protocol]})` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 interface FormProps {
-  /** null creates a group. A group edits its servers only, since its name is its key. */
+  /** null creates a group. A group edits its resolvers only, since its name is its key. */
   editing: UpstreamGroup | null;
+  resolvers: Resolver[];
   onDone: (text: string) => void;
   onCancel: () => void;
 }
 
-function GroupForm({ editing, onDone, onCancel }: FormProps) {
+function GroupForm({ editing, resolvers, onDone, onCancel }: FormProps) {
   const create = useCreateGroup();
   const update = useUpdateGroup();
   const [name, setName] = useState(editing?.name ?? '');
-  const [servers, setServers] = useState((editing?.upstreams ?? []).join('\n'));
+  const [selected, setSelected] = useState<string[]>(editing?.resolvers ?? []);
   const [error, setError] = useState<string | null>(null);
   const busy = create.isPending || update.isPending;
 
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmedName = name.trim();
-    const urls = servers
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
 
     if (!editing && trimmedName.length === 0) return setError('Give the group a name.');
     if (trimmedName.length > GROUP_NAME_MAX) return setError(`The name must be ${GROUP_NAME_MAX} characters or fewer.`);
-    if (urls.length === 0) return setError('Add at least one upstream server, one per line.');
-    for (const url of urls) {
-      const problem = upstreamError(url);
-      if (problem) return setError(problem);
-    }
+    if (selected.length === 0) return setError('Add at least one resolver.');
     setError(null);
 
     if (editing) {
       update.mutate(
-        { name: editing.name, body: { upstreams: urls } },
+        { name: editing.name, body: { resolvers: selected } },
         {
           onSuccess: () => onDone(`Updated upstream group ${editing.name}.`),
           onError: (err) => setError(err.message),
@@ -62,7 +126,7 @@ function GroupForm({ editing, onDone, onCancel }: FormProps) {
       );
     } else {
       create.mutate(
-        { name: trimmedName, upstreams: urls },
+        { name: trimmedName, resolvers: selected },
         {
           onSuccess: () => onDone(`Added upstream group ${trimmedName}.`),
           onError: (err) => setError(err.message),
@@ -73,7 +137,7 @@ function GroupForm({ editing, onDone, onCancel }: FormProps) {
 
   return (
     <form className="group-form" onSubmit={onSubmit} noValidate aria-label={editing ? `Edit ${editing.name}` : 'Add upstream group'}>
-      <div className="form-grid">
+      <div className="form-grid group-grid">
         <label className="field">
           <span>Name</span>
           <input
@@ -84,17 +148,7 @@ function GroupForm({ editing, onDone, onCancel }: FormProps) {
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <label className="field wide">
-          <span>Upstream servers, one per line</span>
-          <textarea
-            className="mono"
-            rows={3}
-            value={servers}
-            spellCheck={false}
-            placeholder={'quic://abc123.dns.nextdns.io\nhttps://dns.example.net/dns-query'}
-            onChange={(e) => setServers(e.target.value)}
-          />
-        </label>
+        <ResolverPicker resolvers={resolvers} selected={selected} onChange={setSelected} />
       </div>
       {error && <Notice tone="error">{error}</Notice>}
       <div className="row-actions">
@@ -111,14 +165,16 @@ function GroupForm({ editing, onDone, onCancel }: FormProps) {
 
 interface Props {
   groups: UpstreamGroup[];
+  resolvers: Resolver[];
 }
 
 /** Admin panel: add, edit and delete upstream groups. */
-export function UpstreamGroupsPanel({ groups }: Props) {
+export function UpstreamGroupsPanel({ groups, resolvers }: Props) {
   const remove = useDeleteGroup();
   const [editing, setEditing] = useState<UpstreamGroup | 'new' | null>(null);
   const [confirmName, setConfirmName] = useState<string | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const byName = new Map(resolvers.map((r) => [r.name, r]));
 
   const onDelete = (group: UpstreamGroup) => {
     setNotice(null);
@@ -146,7 +202,8 @@ export function UpstreamGroupsPanel({ groups }: Props) {
       }
     >
       <p className="muted small panel-sub">
-        A group is the set of DNS servers a client resolves through. Clients with no group use the default.
+        A group is an ordered list of resolvers a client resolves through. The first is tried first, and the next ones take
+        over if it fails. Clients with no group use the default.
       </p>
 
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
@@ -154,6 +211,7 @@ export function UpstreamGroupsPanel({ groups }: Props) {
       {editing !== null && (
         <GroupForm
           editing={editing === 'new' ? null : editing}
+          resolvers={resolvers}
           onDone={(text) => {
             setEditing(null);
             setNotice({ tone: 'ok', text });
@@ -167,7 +225,7 @@ export function UpstreamGroupsPanel({ groups }: Props) {
           <thead>
             <tr>
               <th scope="col">Group</th>
-              <th scope="col">Servers</th>
+              <th scope="col">Resolvers</th>
               <th scope="col">Used by</th>
               <th scope="col">Actions</th>
             </tr>
@@ -184,9 +242,11 @@ export function UpstreamGroupsPanel({ groups }: Props) {
                   <strong>{group.name}</strong>
                   {group.is_default && <span className="badge badge-cyan group-default">Default</span>}
                 </td>
-                <td className="mono url-cell">
-                  {group.upstreams.map((url) => (
-                    <div key={url} title={url}>{url}</div>
+                <td className="url-cell">
+                  {group.resolvers.map((name, index) => (
+                    <div key={name} title={byName.get(name)?.url ?? name}>
+                      <span className="muted mono">{index + 1}.</span> {name} <ProtocolBadge protocol={byName.get(name)?.protocol} />
+                    </div>
                   ))}
                 </td>
                 <td className="muted small">

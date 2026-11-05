@@ -18,6 +18,7 @@ import type {
   Me,
   QueryLogParams,
   RangeKey,
+  ResolverBody,
 } from './types';
 
 export const POLL_STATS_MS = 5_000;
@@ -178,12 +179,16 @@ export function useClients() {
   });
 }
 
-/** Client changes also move the list page's "Assigned to" chips, so both caches refresh. */
+/**
+ * Client changes also move the list page's "Assigned to" chips, and group or
+ * resolver changes move the dashboard's upstream cards, so those caches refresh too.
+ */
 function useInvalidateClientViews() {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.clients });
     queryClient.invalidateQueries({ queryKey: queryKeys.lists });
+    queryClient.invalidateQueries({ queryKey: ['stats'] });
   };
 }
 
@@ -231,6 +236,30 @@ export function useDeleteGroup() {
   const invalidate = useInvalidateClientViews();
   return useMutation({
     mutationFn: (name: string) => api.deleteGroup(name),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useCreateResolver() {
+  const invalidate = useInvalidateClientViews();
+  return useMutation({
+    mutationFn: (body: ResolverBody) => api.createResolver(body),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useUpdateResolver() {
+  const invalidate = useInvalidateClientViews();
+  return useMutation({
+    mutationFn: ({ name, body }: { name: string; body: ResolverBody }) => api.updateResolver(name, body),
+    onSuccess: () => invalidate(),
+  });
+}
+
+export function useDeleteResolver() {
+  const invalidate = useInvalidateClientViews();
+  return useMutation({
+    mutationFn: (name: string) => api.deleteResolver(name),
     onSuccess: () => invalidate(),
   });
 }
