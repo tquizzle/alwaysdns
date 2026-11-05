@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import type { FilterList } from '../api/types';
 import { formatDateTime, formatInt } from '../lib/format';
 import { redactListUrl } from '../lib/lists';
+import { ConfirmDelete } from './ConfirmDelete';
 import { DataTable } from './DataTable';
 
 const helper = createColumnHelper<FilterList>();
@@ -176,20 +177,12 @@ export function ListsTable({
           const list = row.original;
           if (confirmDeleteId === list.id) {
             return (
-              <div className="row-actions">
-                <span className="small text-red">Delete this list?</span>
-                <button
-                  type="button"
-                  className="btn btn-small btn-danger"
-                  disabled={deletingId === list.id}
-                  onClick={() => onConfirmDelete(list.id)}
-                >
-                  {deletingId === list.id ? 'Deleting...' : 'Confirm'}
-                </button>
-                <button type="button" className="btn btn-small" onClick={onCancelDelete}>
-                  Cancel
-                </button>
-              </div>
+              <ConfirmDelete
+                prompt="Delete this list?"
+                deleting={deletingId === list.id}
+                onConfirm={() => onConfirmDelete(list.id)}
+                onCancel={onCancelDelete}
+              />
             );
           }
           return (

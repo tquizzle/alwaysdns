@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useCreateGroup, useDeleteGroup, useUpdateGroup } from '../api/queries';
 import type { Resolver, UpstreamGroup } from '../api/types';
 import { PROTOCOL_LABEL, moveItem } from '../lib/resolvers';
+import { ConfirmDelete } from './ConfirmDelete';
 import { EmptyState, Notice, type NoticeState } from './States';
 import { Panel } from './Panel';
 import { ProtocolBadge, UsedByBadges, focusControl, plural } from './ResolversPanel';
@@ -354,20 +355,13 @@ export function UpstreamGroupsPanel({ groups, resolvers, onNewResolver }: Props)
                     </td>
                     <td className="col-actions" data-label="Actions">
                       {confirmName === group.name ? (
-                        <div className="row-actions">
-                          <span className="small text-red">Delete this group?</span>
-                          <button
-                            type="button"
-                            className="btn btn-small btn-danger"
-                            disabled={remove.isPending}
-                            onClick={() => onDelete(group)}
-                          >
-                            {deletingName === group.name ? 'Deleting...' : 'Confirm'}
-                          </button>
-                          <button type="button" className="btn btn-small" onClick={() => setConfirmName(null)}>
-                            Cancel
-                          </button>
-                        </div>
+                        <ConfirmDelete
+                          prompt="Delete this group?"
+                          deleting={deletingName === group.name}
+                          disabled={remove.isPending}
+                          onConfirm={() => onDelete(group)}
+                          onCancel={() => setConfirmName(null)}
+                        />
                       ) : (
                         <div className="row-actions">
                           <button

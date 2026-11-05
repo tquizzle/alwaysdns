@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useMe, useHealth } from './api/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorState, LoadingState } from './components/States';
@@ -49,6 +50,12 @@ function Shell({ username, role }: { username: string; role: string }) {
   const isAdmin = role === 'admin';
   // Viewers have no Upstreams page. A pasted #/upstreams link falls back to the dashboard.
   const route: Route = requested === 'upstreams' && !isAdmin ? 'dashboard' : requested;
+
+  // The tab title names the page, so several open tabs can be told apart.
+  useEffect(() => {
+    const label = NAV.find((item) => item.route === route)?.label ?? 'Dashboard';
+    document.title = `${label} · DNS Control`;
+  }, [route]);
 
   return (
     <div className="app">

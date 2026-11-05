@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useCreateResolver, useDeleteResolver, useUpdateResolver } from '../api/queries';
 import type { Protocol, Resolver } from '../api/types';
 import { PROTOCOL_LABEL, resolverNameError, upstreamUrlError } from '../lib/resolvers';
+import { ConfirmDelete } from './ConfirmDelete';
 import { EmptyState, Notice, type NoticeState } from './States';
 import { Panel } from './Panel';
 
@@ -246,20 +247,13 @@ export function ResolversPanel({ resolvers, openSignal = 0 }: Props) {
                     </td>
                     <td className="col-actions" data-label="Actions">
                       {confirmName === resolver.name ? (
-                        <div className="row-actions">
-                          <span className="small text-red">Delete this resolver?</span>
-                          <button
-                            type="button"
-                            className="btn btn-small btn-danger"
-                            disabled={remove.isPending}
-                            onClick={() => onDelete(resolver)}
-                          >
-                            {deletingName === resolver.name ? 'Deleting...' : 'Confirm'}
-                          </button>
-                          <button type="button" className="btn btn-small" onClick={() => setConfirmName(null)}>
-                            Cancel
-                          </button>
-                        </div>
+                        <ConfirmDelete
+                          prompt="Delete this resolver?"
+                          deleting={deletingName === resolver.name}
+                          disabled={remove.isPending}
+                          onConfirm={() => onDelete(resolver)}
+                          onCancel={() => setConfirmName(null)}
+                        />
                       ) : (
                         <div className="row-actions">
                           <button

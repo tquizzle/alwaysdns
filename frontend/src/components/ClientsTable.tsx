@@ -4,6 +4,7 @@ import type { Client, ClientUpdateBody } from '../api/types';
 import { clientBody } from '../lib/clients';
 import { formatInt, orDash } from '../lib/format';
 import { redactAddressList } from '../lib/redact';
+import { ConfirmDelete } from './ConfirmDelete';
 import { DataTable } from './DataTable';
 
 const helper = createColumnHelper<Client>();
@@ -73,20 +74,12 @@ function RowActions({ client, deleting, onEdit, onDelete }: ActionsProps) {
   const [confirming, setConfirming] = useState(false);
   if (confirming) {
     return (
-      <div className="row-actions">
-        <span className="small text-red">Delete {client.name}?</span>
-        <button
-          type="button"
-          className="btn btn-small btn-danger"
-          disabled={deleting}
-          onClick={() => onDelete(client)}
-        >
-          {deleting ? 'Deleting...' : 'Confirm'}
-        </button>
-        <button type="button" className="btn btn-small" onClick={() => setConfirming(false)}>
-          Cancel
-        </button>
-      </div>
+      <ConfirmDelete
+        prompt={`Delete ${client.name}?`}
+        deleting={deleting}
+        onConfirm={() => onDelete(client)}
+        onCancel={() => setConfirming(false)}
+      />
     );
   }
   return (
