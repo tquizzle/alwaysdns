@@ -136,6 +136,8 @@ impl UpstreamManager {
                 let s = st.stats.get(url).cloned().unwrap_or_default();
                 UpstreamStat {
                     name: url.clone(),
+                    url: Some(url.clone()),
+                    protocol: crate::config::protocol_of(url),
                     ok: s.failures_in_row < DOWN_AFTER,
                     avg_ms: if s.successes > 0 {
                         ((s.sum_ms / s.successes as f64) * 1000.0).round() / 1000.0

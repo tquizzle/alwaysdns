@@ -121,7 +121,7 @@ impl AppState {
         users: Users,
         stats_source: StatsSource,
     ) -> Result<Arc<Self>> {
-        let config = Config::load(&opts.config_path)?;
+        let config = Config::load_and_migrate(&opts.config_path)?;
         let (db, db_error, log_sink) = open_database(opts.db_path.as_deref(), &config);
 
         let upstreams = UpstreamManager::new();
@@ -327,10 +327,16 @@ impl AppState {
         self.cache.clear();
     }
 
-    /// Upstream health for every configured server.
+    /// Upstream health for every server a group uses, named by resolver.
     pub fn upstream_stats(&self) -> Vec<UpstreamStat> {
-        let urls = self.runtime().config.upstream_urls();
-        self.upstreams.snapshot(&urls)
+        let rt = self.runtime();
+        let mut stats = self.upstreams.snapshot(&rt.config.upstream_urls());
+        for stat in &mut stats {
+            if let Some(name) = stat.url.as_deref().and_then(|u| rt.config.resolver_name_for_url(u)) {
+                stat.name = name.to_string();
+            }
+        }
+        stats
     }
 
     /// Probes every configured upstream once a minute on a background task. The

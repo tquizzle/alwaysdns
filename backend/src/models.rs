@@ -49,7 +49,14 @@ pub struct TopEntry {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UpstreamStat {
+    /// The resolver's friendly name, or the URL when it has none.
     pub name: String,
+    /// The server URL, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// `doh` or `doq`, from the URL scheme.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<&'static str>,
     /// False after three failures in a row, live or probe. True when never attempted.
     pub ok: bool,
     /// Average of live client queries, in ms. Zero when none have been answered.
@@ -71,6 +78,9 @@ pub struct QueryItem {
     pub qtype: String,
     pub result: String,
     pub upstream: String,
+    /// The resolver's friendly name, when a resolver has this upstream's URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstream_name: Option<String>,
     pub elapsed_ms: f64,
     pub rule: String,
     /// Source address. Included for admins only.

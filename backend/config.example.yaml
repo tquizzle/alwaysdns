@@ -10,11 +10,19 @@ listen:
 # URL uses a hostname (not an IP literal).
 bootstrap: ["9.9.9.10"]
 
-# Named sets of DoH endpoints. Servers are tried in order. A client's group
-# falls back to default_upstream_group's servers when every server fails.
+# Named upstream servers: friendly name -> URL. https:// is DNS-over-HTTPS and
+# quic:// is DNS-over-QUIC. Each resolver gets its own health stats and its own
+# card on the dashboard, so list the DoH and DoQ versions of a provider separately.
+resolvers:
+  "Quad9": "https://dns10.quad9.net/dns-query"
+  "NextDNS (DoH)": "https://abc123.dns.nextdns.io/dns-query"   # example
+  "NextDNS (DoQ)": "quic://abc123.dns.nextdns.io"              # example
+
+# Named sets of resolvers. Resolvers are tried in order. A client's group falls
+# back to default_upstream_group's resolvers when every resolver fails.
 upstream_groups:
-  default: ["https://dns10.quad9.net/dns-query"]
-  nextdns: ["https://abc123.dns.nextdns.io/dns-query"]   # example
+  default: ["Quad9"]
+  nextdns: ["NextDNS (DoQ)", "NextDNS (DoH)"]
 
 clients:
   - name: Laptop

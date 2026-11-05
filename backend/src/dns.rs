@@ -231,17 +231,10 @@ fn rewrite_answers(name: &str, addr: IpAddr, qtype: RecordType) -> Vec<Record> {
 /// The group's servers, followed by the default group's servers as a fallback
 /// (duplicates removed). Used when every server in the group fails.
 fn servers_for_group(rt: &Runtime, group: &str) -> Vec<String> {
-    let mut servers: Vec<String> = rt
-        .config
-        .upstream_groups
-        .get(group)
-        .cloned()
-        .unwrap_or_default();
-    if let Some(defaults) = rt.config.upstream_groups.get(&rt.config.default_upstream_group) {
-        for url in defaults {
-            if !servers.contains(url) {
-                servers.push(url.clone());
-            }
+    let mut servers = rt.config.group_urls(group);
+    for url in rt.config.group_urls(&rt.config.default_upstream_group) {
+        if !servers.contains(&url) {
+            servers.push(url);
         }
     }
     servers

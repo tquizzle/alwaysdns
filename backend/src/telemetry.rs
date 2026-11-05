@@ -112,6 +112,7 @@ impl Telemetry {
             qtype: ev.qtype.clone(),
             result: ev.result.to_string(),
             upstream: ev.upstream.clone(),
+            upstream_name: None,
             elapsed_ms: round3(ev.elapsed_ms),
             rule: ev.rule.clone(),
             client_ip: Some(ev.client_ip.to_string()),

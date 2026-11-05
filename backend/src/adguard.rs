@@ -182,6 +182,7 @@ fn map_querylog_entry(e: &Value) -> QueryItem {
         qtype: e["question"]["type"].as_str().unwrap_or("").to_string(),
         result: result.to_string(),
         upstream: e["upstream"].as_str().unwrap_or("").to_string(),
+        upstream_name: None,
         elapsed_ms: elapsed,
         rule: e["rule"].as_str().unwrap_or("").to_string(),
         client_ip: Some(client_ip).filter(|s| !s.is_empty()),
@@ -232,6 +233,8 @@ fn upstream_stats(v: &Value) -> Vec<UpstreamStat> {
             for name in map.keys() {
                 out.push(UpstreamStat {
                     name: name.clone(),
+                    url: None,
+                    protocol: None,
                     // AdGuard reports no per-upstream error counts or health.
                     ok: true,
                     avg_ms: avg.get(name).copied().unwrap_or(0.0).round(),

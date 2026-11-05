@@ -4,7 +4,7 @@
 //! serde model, so `GET /api/config` returns exactly what `PUT /api/config`
 //! accepts.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
@@ -25,6 +25,10 @@ pub struct Config {
     pub listen: Listen,
     #[serde(default)]
     pub bootstrap: Vec<IpAddr>,
+    /// Named upstream servers: friendly name to `https://` (DoH) or `quic://` (DoQ) URL.
+    #[serde(default)]
+    pub resolvers: BTreeMap<String, String>,
+    /// Group name to resolver names, in failover order.
     #[serde(default)]
     pub upstream_groups: BTreeMap<String, Vec<String>>,
     #[serde(default)]
@@ -162,15 +166,51 @@ pub struct RewriteConfig {
 
 impl Config {
     pub fn parse_yaml(text: &str) -> Result<Self> {
-        let cfg: Config = serde_yaml::from_str(text).context("parsing config YAML")?;
+        Ok(Self::parse_counting(text)?.0)
+    }
+
+    /// Parses and validates, moving raw upstream URLs found in groups (the old
+    /// format) into `resolvers`. Also returns how many resolvers that created.
+    fn parse_counting(text: &str) -> Result<(Self, usize)> {
+        let mut cfg: Config = serde_yaml::from_str(text).context("parsing config YAML")?;
+        let migrated = cfg.migrate_legacy_upstreams();
         cfg.validate()?;
-        Ok(cfg)
+        Ok((cfg, migrated))
     }
 
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading config {}", path.display()))?;
         Self::parse_yaml(&text).with_context(|| format!("invalid config {}", path.display()))
+    }
+
+    /// Startup load. When the file still lists raw upstream URLs in its groups,
+    /// the old file is kept as `config.yaml.bak` and the migrated shape is saved.
+    /// If that backup or save fails, a warning is logged and the migrated config
+    /// still runs. It is saved on the next change.
+    pub fn load_and_migrate(path: &Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("reading config {}", path.display()))?;
+        let (cfg, migrated) = Self::parse_counting(&text)
+            .with_context(|| format!("invalid config {}", path.display()))?;
+        if migrated > 0 {
+            let backup = path.with_extension("yaml.bak");
+            let saved = std::fs::write(&backup, &text)
+                .with_context(|| format!("writing {}", backup.display()))
+                .and_then(|()| cfg.save(path));
+            match saved {
+                Ok(()) => tracing::info!(
+                    resolvers = migrated,
+                    backup = %backup.display(),
+                    "moved upstream URLs into named resolvers"
+                ),
+                Err(err) => tracing::warn!(
+                    error = %format!("{err:#}"),
+                    "could not save the migrated config; it will be saved on the next change"
+                ),
+            }
+        }
+        Ok(cfg)
     }
 
     pub fn to_yaml(&self) -> Result<String> {
@@ -224,24 +264,32 @@ impl Config {
         }
 
         let mut needs_bootstrap = false;
-        for (group, urls) in &self.upstream_groups {
+        let mut url_owner: HashMap<&str, &str> = HashMap::new();
+        for (name, raw) in &self.resolvers {
+            check_resolver_name(name)?;
+            let url = parse_upstream_url(raw).with_context(|| format!("resolver '{name}'"))?;
+            if let Some(other) = url_owner.insert(raw.as_str(), name.as_str()) {
+                bail!("resolvers '{other}' and '{name}' use the same URL");
+            }
+            if url.host_str().unwrap_or_default().parse::<IpAddr>().is_err() {
+                needs_bootstrap = true;
+            }
+        }
+        for (group, names) in &self.upstream_groups {
             if group.trim().is_empty() {
                 bail!("upstream group names cannot be empty");
             }
-            if urls.is_empty() {
-                bail!("upstream group '{group}' has no servers");
+            if names.is_empty() {
+                bail!("upstream group '{group}' has no resolvers");
             }
-            for raw in urls {
-                let url = parse_upstream_url(raw)
-                    .with_context(|| format!("upstream group '{group}'"))?;
-                let host = url.host_str().unwrap_or_default();
-                if host.parse::<IpAddr>().is_err() {
-                    needs_bootstrap = true;
+            for name in names {
+                if !self.resolvers.contains_key(name) {
+                    bail!("upstream group '{group}' uses unknown resolver '{name}'");
                 }
             }
         }
         if needs_bootstrap && self.bootstrap.is_empty() {
-            bail!("bootstrap is required because a DoH upstream is given by hostname");
+            bail!("bootstrap is required because a resolver is given by hostname");
         }
 
         let mut client_names = HashSet::new();
@@ -310,19 +358,130 @@ impl Config {
         Ok(())
     }
 
+    /// The URLs of a group's resolvers, in the group's failover order.
+    pub fn group_urls(&self, group: &str) -> Vec<String> {
+        self.upstream_groups
+            .get(group)
+            .map(|names| names.iter().filter_map(|n| self.resolvers.get(n).cloned()).collect())
+            .unwrap_or_default()
+    }
+
     /// Every distinct upstream URL referenced by any group, in config order.
     pub fn upstream_urls(&self) -> Vec<String> {
         let mut seen = HashSet::new();
         let mut out = Vec::new();
-        for urls in self.upstream_groups.values() {
-            for url in urls {
+        for group in self.upstream_groups.keys() {
+            for url in self.group_urls(group) {
                 if seen.insert(url.clone()) {
-                    out.push(url.clone());
+                    out.push(url);
                 }
             }
         }
         out
     }
+
+    /// The resolver name for a server URL, when a resolver has that URL.
+    pub fn resolver_name_for_url(&self, url: &str) -> Option<&str> {
+        self.resolvers
+            .iter()
+            .find(|(_, u)| u.as_str() == url)
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// Renames a resolver and every group entry that lists it. Does nothing
+    /// when `old` is not a resolver.
+    pub fn rename_resolver(&mut self, old: &str, new: &str) {
+        let Some(url) = self.resolvers.remove(old) else {
+            return;
+        };
+        self.resolvers.insert(new.to_string(), url);
+        for names in self.upstream_groups.values_mut() {
+            for name in names.iter_mut().filter(|n| n.as_str() == old) {
+                *name = new.to_string();
+            }
+        }
+    }
+
+    /// Moves raw upstream URLs out of the groups (the old format) into
+    /// `resolvers`, named from their hostnames. Anything that is neither a
+    /// resolver name nor a usable URL is left for `validate` to report.
+    /// Returns how many resolvers were created.
+    pub(crate) fn migrate_legacy_upstreams(&mut self) -> usize {
+        let mut created = 0;
+        let groups = std::mem::take(&mut self.upstream_groups);
+        for (group, entries) in groups {
+            let mut names = Vec::with_capacity(entries.len());
+            for entry in entries {
+                if self.resolvers.contains_key(&entry) {
+                    names.push(entry);
+                    continue;
+                }
+                let Ok(url) = parse_upstream_url(&entry) else {
+                    names.push(entry);
+                    continue;
+                };
+                let name = match self.resolver_name_for_url(&entry).map(str::to_string) {
+                    Some(existing) => existing,
+                    None => {
+                        created += 1;
+                        let name = unique_resolver_name(&self.resolvers, &url);
+                        self.resolvers.insert(name.clone(), entry);
+                        name
+                    }
+                };
+                names.push(name);
+            }
+            self.upstream_groups.insert(group, names);
+        }
+        created
+    }
+}
+
+/// Rejects resolver names that are empty or that look like a URL, since a
+/// URL-shaped name could not be told apart from a raw URL in an old config.
+pub fn check_resolver_name(name: &str) -> Result<()> {
+    if name.trim().is_empty() {
+        bail!("resolver names cannot be empty");
+    }
+    if name.contains("://") {
+        bail!("resolver name '{name}' must not look like a URL");
+    }
+    Ok(())
+}
+
+/// `doh` or `doq`, from the URL scheme. None for anything else.
+pub fn protocol_of(url: &str) -> Option<&'static str> {
+    if url.starts_with("https://") {
+        Some("doh")
+    } else if url.starts_with("quic://") {
+        Some("doq")
+    } else {
+        None
+    }
+}
+
+/// A resolver name for a migrated URL: the host, plus the path when it is not
+/// the standard `/dns-query`. A taken name gets the protocol, then a number.
+fn unique_resolver_name(taken: &BTreeMap<String, String>, url: &Url) -> String {
+    let host = url.host_str().unwrap_or("resolver");
+    let path = url.path().trim_matches('/');
+    let base = if path.is_empty() || path == "dns-query" {
+        host.to_string()
+    } else {
+        format!("{host}/{path}")
+    };
+    if !taken.contains_key(&base) {
+        return base;
+    }
+    let proto = if url.scheme() == "quic" { "DoQ" } else { "DoH" };
+    let tagged = format!("{base} ({proto})");
+    if !taken.contains_key(&tagged) {
+        return tagged;
+    }
+    (2..)
+        .map(|n| format!("{tagged} {n}"))
+        .find(|candidate| !taken.contains_key(candidate))
+        .unwrap_or_default()
 }
 
 /// Parses an upstream URL. Accepts `https://` (DNS-over-HTTPS) and
@@ -506,5 +665,130 @@ mod upstream_url_tests {
         assert!(parse_upstream_url("tls://dns.quad9.net").is_err());
         assert!(parse_upstream_url("http://dns.quad9.net/dns-query").is_err());
         assert!(parse_upstream_url("quic://").is_err());
+    }
+}
+
+#[cfg(test)]
+mod resolver_tests {
+    use super::*;
+
+    const LEGACY: &str = r#"
+bootstrap: ["9.9.9.10"]
+upstream_groups:
+  default: ["https://dns10.quad9.net/dns-query"]
+  laptop: ["quic://abc123.dns.nextdns.io", "https://dns.nextdns.io/abc123"]
+  other: ["https://dns10.quad9.net/dns-query"]
+"#;
+
+    #[test]
+    fn raw_urls_in_groups_become_named_resolvers() {
+        let (cfg, created) = Config::parse_counting(LEGACY).unwrap();
+        assert_eq!(created, 3);
+        assert_eq!(cfg.resolvers["dns10.quad9.net"], "https://dns10.quad9.net/dns-query");
+        assert_eq!(cfg.resolvers["abc123.dns.nextdns.io"], "quic://abc123.dns.nextdns.io");
+        assert_eq!(cfg.resolvers["dns.nextdns.io/abc123"], "https://dns.nextdns.io/abc123");
+        assert_eq!(cfg.upstream_groups["laptop"], vec!["abc123.dns.nextdns.io", "dns.nextdns.io/abc123"]);
+        // The same URL in two groups is one resolver.
+        assert_eq!(cfg.upstream_groups["other"], vec!["dns10.quad9.net"]);
+    }
+
+    #[test]
+    fn migration_is_idempotent() {
+        let (first, _) = Config::parse_counting(LEGACY).unwrap();
+        let (second, created) = Config::parse_counting(&first.to_yaml().unwrap()).unwrap();
+        assert_eq!(created, 0);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn same_host_in_two_protocols_gets_distinct_names() {
+        let text = r#"
+bootstrap: ["9.9.9.10"]
+upstream_groups:
+  default: ["https://dns.example.net/dns-query", "quic://dns.example.net"]
+"#;
+        let cfg = Config::parse_yaml(text).unwrap();
+        assert_eq!(cfg.resolvers.len(), 2);
+        assert!(cfg.resolvers.contains_key("dns.example.net"));
+        assert!(cfg.resolvers.contains_key("dns.example.net (DoQ)"));
+    }
+
+    #[test]
+    fn rejects_bad_resolver_setups() {
+        let base = "bootstrap: [\"9.9.9.10\"]\n";
+        for bad in [
+            // Two names for one URL.
+            "resolvers: {a: \"https://x.example/dns-query\", b: \"https://x.example/dns-query\"}\nupstream_groups: {default: [a]}",
+            // A group naming a resolver that does not exist.
+            "resolvers: {a: \"https://x.example/dns-query\"}\nupstream_groups: {default: [missing]}",
+            // A name that looks like a URL.
+            "resolvers: {\"https://x.example\": \"https://x.example/dns-query\"}\nupstream_groups: {default: [\"https://x.example\"]}",
+            // A group with no resolvers.
+            "resolvers: {a: \"https://x.example/dns-query\"}\nupstream_groups: {default: []}",
+        ] {
+            assert!(Config::parse_yaml(&format!("{base}{bad}")).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn group_urls_follow_the_group_order() {
+        let (cfg, _) = Config::parse_counting(LEGACY).unwrap();
+        assert_eq!(
+            cfg.group_urls("laptop"),
+            vec!["quic://abc123.dns.nextdns.io", "https://dns.nextdns.io/abc123"]
+        );
+        assert!(cfg.group_urls("nope").is_empty());
+        assert_eq!(cfg.upstream_urls().len(), 3);
+        assert_eq!(
+            cfg.resolver_name_for_url("quic://abc123.dns.nextdns.io"),
+            Some("abc123.dns.nextdns.io")
+        );
+        assert_eq!(cfg.resolver_name_for_url("quic://unknown.example"), None);
+    }
+
+    #[test]
+    fn rename_carries_into_every_group() {
+        let (mut cfg, _) = Config::parse_counting(LEGACY).unwrap();
+        cfg.rename_resolver("dns10.quad9.net", "Quad9");
+        assert_eq!(cfg.upstream_groups["default"], vec!["Quad9"]);
+        assert_eq!(cfg.upstream_groups["other"], vec!["Quad9"]);
+        assert_eq!(cfg.resolvers["Quad9"], "https://dns10.quad9.net/dns-query");
+        assert!(!cfg.resolvers.contains_key("dns10.quad9.net"));
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn example_configs_are_valid_and_already_use_resolvers() {
+        for text in [
+            include_str!("../config.example.yaml"),
+            include_str!("../../deploy/config.example.yaml"),
+        ] {
+            let (cfg, migrated) = Config::parse_counting(text).unwrap();
+            assert_eq!(migrated, 0, "the examples must not rely on the migration");
+            assert_eq!(cfg.group_urls("nextdns").len(), 2);
+        }
+    }
+
+    #[test]
+    fn protocol_comes_from_the_scheme() {
+        assert_eq!(protocol_of("https://a.example/dns-query"), Some("doh"));
+        assert_eq!(protocol_of("quic://a.example"), Some("doq"));
+        assert_eq!(protocol_of("-"), None);
+    }
+
+    #[test]
+    fn startup_load_backs_up_and_saves_the_migrated_file() {
+        let dir = std::env::temp_dir().join(format!("dnsui-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.yaml");
+        std::fs::write(&path, LEGACY).unwrap();
+
+        let cfg = Config::load_and_migrate(&path).unwrap();
+        assert_eq!(cfg.resolvers.len(), 3);
+        assert_eq!(std::fs::read_to_string(dir.join("config.yaml.bak")).unwrap(), LEGACY);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("resolvers:"));
+        assert_eq!(Config::load(&path).unwrap(), cfg);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

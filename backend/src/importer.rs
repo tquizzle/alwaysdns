@@ -196,9 +196,10 @@ pub fn import_adguard(text: &str) -> Result<(Config, ImportReport)> {
     }
     report.rewrites = rewrites.len();
 
-    let config = Config {
+    let mut config = Config {
         listen: Default::default(),
         bootstrap,
+        resolvers: BTreeMap::new(),
         upstream_groups,
         clients,
         lists,
@@ -210,6 +211,7 @@ pub fn import_adguard(text: &str) -> Result<(Config, ImportReport)> {
         block_domains: global_block,
         default_upstream_group: DEFAULT_GROUP.to_string(),
     };
+    config.migrate_legacy_upstreams();
     config
         .validate()
         .context("the imported config is not valid; please report this")?;
@@ -422,7 +424,8 @@ filtering:
         let laptop = cfg.clients.iter().find(|c| c.name == "Laptop").unwrap();
         assert_eq!(laptop.cidrs, vec!["192.0.2.10/32", "198.51.100.65/32", "203.0.113.0/24"]);
         assert_eq!(laptop.upstream_group.as_deref(), Some("laptop"));
-        assert_eq!(cfg.upstream_groups["laptop"], vec!["https://abc123.dns.nextdns.io/dns-query"]);
+        assert_eq!(cfg.upstream_groups["laptop"], vec!["abc123.dns.nextdns.io"]);
+        assert_eq!(cfg.resolvers["abc123.dns.nextdns.io"], "https://abc123.dns.nextdns.io/dns-query");
         assert_eq!(laptop.block_lists, vec!["adguard_dns_filter"]);
         assert_eq!(laptop.allow_domains, vec!["tracker.example.com"]);
 

@@ -22,7 +22,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::app::{AppState, NewList, StatsSource};
 use crate::auth::{Role, SESSION_COOKIE, token_from_cookie_header};
-use crate::config::{ClientConfig, Config, ListFormat};
+use crate::config::{ClientConfig, Config, ListFormat, check_resolver_name, protocol_of};
 use crate::db::{self, ListPatch, ListRecord, QueryFilter, QueryRecord};
 use crate::insights;
 use crate::models::{HistoryResponse, QueryItem, QueryLogResponse, StatsResponse, TimelinePoint, TopEntry};
@@ -60,6 +60,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/clients/{name}", put(update_client).delete(delete_client))
         .route("/api/upstream-groups", post(create_group))
         .route("/api/upstream-groups/{name}", put(update_group).delete(delete_group))
+        .route("/api/resolvers", post(create_resolver))
+        .route("/api/resolvers/{name}", put(update_resolver).delete(delete_resolver))
         .route("/api/config", get(get_config).put(put_config))
         .route("/api/reload", post(reload))
         .route("/api/{*rest}", any(api_not_found))
@@ -617,6 +619,7 @@ fn record_to_item(r: QueryRecord) -> QueryItem {
         qtype: r.qtype,
         result: r.result,
         upstream: r.upstream,
+        upstream_name: None,
         elapsed_ms: round3(r.elapsed_ms),
         rule: r.rule,
         client_ip: Some(r.client_ip),
@@ -648,7 +651,7 @@ async fn querylog(
         ));
     }
 
-    let resp = match (&state.stats_source, state.db.clone()) {
+    let mut resp = match (&state.stats_source, state.db.clone()) {
         (StatsSource::Native, Some(db)) => {
             let (records, total) = blocking(move || {
                 db.with(|c| {
@@ -724,6 +727,10 @@ async fn querylog(
             QueryLogResponse { items, total }
         }
     };
+    let rt = state.runtime();
+    for item in &mut resp.items {
+        item.upstream_name = rt.config.resolver_name_for_url(&item.upstream).map(str::to_string);
+    }
     Ok(Json(resp))
 }
 
@@ -778,14 +785,16 @@ async fn clients(
         })
         .collect();
     let groups = if admin { group_views(&rt.config) } else { Vec::new() };
-    Json(json!({ "clients": views, "upstream_groups": groups }))
+    let resolvers = if admin { resolver_views(&rt.config) } else { Vec::new() };
+    Json(json!({ "clients": views, "upstream_groups": groups, "resolvers": resolvers }))
 }
 
 /// One upstream group as the admin page shows it.
 #[derive(Debug, Serialize)]
 struct UpstreamGroupView {
     name: String,
-    upstreams: Vec<String>,
+    /// Resolver names, in failover order.
+    resolvers: Vec<String>,
     /// Clients that name this group explicitly. Others fall back to the default.
     clients: Vec<String>,
     is_default: bool,
@@ -795,9 +804,9 @@ fn group_views(config: &Config) -> Vec<UpstreamGroupView> {
     config
         .upstream_groups
         .iter()
-        .map(|(name, urls)| UpstreamGroupView {
+        .map(|(name, resolvers)| UpstreamGroupView {
             name: name.clone(),
-            upstreams: urls.clone(),
+            resolvers: resolvers.clone(),
             clients: config
                 .clients
                 .iter()
@@ -805,6 +814,35 @@ fn group_views(config: &Config) -> Vec<UpstreamGroupView> {
                 .map(|c| c.name.clone())
                 .collect(),
             is_default: *name == config.default_upstream_group,
+        })
+        .collect()
+}
+
+/// One resolver as the admin page shows it.
+#[derive(Debug, Serialize)]
+struct ResolverView {
+    name: String,
+    url: String,
+    /// `doh` or `doq`, from the URL scheme.
+    protocol: Option<&'static str>,
+    /// Groups that list this resolver.
+    groups: Vec<String>,
+}
+
+fn resolver_views(config: &Config) -> Vec<ResolverView> {
+    config
+        .resolvers
+        .iter()
+        .map(|(name, url)| ResolverView {
+            name: name.clone(),
+            url: url.clone(),
+            protocol: protocol_of(url),
+            groups: config
+                .upstream_groups
+                .iter()
+                .filter(|(_, names)| names.contains(name))
+                .map(|(group, _)| group.clone())
+                .collect(),
         })
         .collect()
 }
@@ -1284,7 +1322,8 @@ async fn save_checked(state: &AppState, config: Config, known_lists: &HashSet<St
 struct GroupBody {
     /// Required when creating. Ignored when updating, where the name comes from the path.
     name: Option<String>,
-    upstreams: Vec<String>,
+    /// Resolver names, in failover order.
+    resolvers: Vec<String>,
 }
 
 /// The full rule set for one client. Every save sends all of it, so a field left
@@ -1420,14 +1459,14 @@ async fn create_group(
     if config.upstream_groups.contains_key(&name) {
         return Err(ApiError::bad_request(format!("an upstream group named '{name}' already exists")));
     }
-    config.upstream_groups.insert(name.clone(), clean_list(body.upstreams));
+    config.upstream_groups.insert(name.clone(), clean_list(body.resolvers));
 
     let known = known_block_lists(&state).await?;
     save_checked(&state, config, &known).await?;
     Ok(Json(json!({ "ok": true, "name": name })))
 }
 
-/// `PUT /api/upstream-groups/{name}`: replaces the servers in a group.
+/// `PUT /api/upstream-groups/{name}`: replaces the resolvers in a group.
 async fn update_group(
     session: Session,
     State(state): State<Arc<AppState>>,
@@ -1442,7 +1481,7 @@ async fn update_group(
         .upstream_groups
         .get_mut(&name)
         .ok_or_else(|| ApiError::not_found(format!("no upstream group named '{name}'")))?;
-    *servers = clean_list(body.upstreams);
+    *servers = clean_list(body.resolvers);
 
     let known = known_block_lists(&state).await?;
     save_checked(&state, config, &known).await?;
@@ -1479,6 +1518,127 @@ async fn delete_group(
         )));
     }
     config.upstream_groups.remove(&name);
+
+    let known = known_block_lists(&state).await?;
+    save_checked(&state, config, &known).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResolverBody {
+    /// Required when creating. When updating, a different name renames the resolver.
+    name: Option<String>,
+    url: String,
+}
+
+/// Trims a resolver name and rejects names that are empty, too long or URL-shaped.
+fn validate_resolver_name(raw: &str) -> Result<String, ApiError> {
+    let name = raw.trim().to_string();
+    check_resolver_name(&name).map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    if name.chars().count() > 64 {
+        return Err(ApiError::bad_request("the resolver name must be 64 characters or fewer"));
+    }
+    if name.chars().any(char::is_control) {
+        return Err(ApiError::bad_request("the resolver name cannot contain control characters"));
+    }
+    Ok(name)
+}
+
+/// The resolver that already uses `url`, ignoring `except`.
+fn resolver_using_url<'a>(config: &'a Config, url: &str, except: Option<&str>) -> Option<&'a str> {
+    config
+        .resolvers
+        .iter()
+        .find(|(name, u)| u.as_str() == url && Some(name.as_str()) != except)
+        .map(|(name, _)| name.as_str())
+}
+
+/// `POST /api/resolvers`: adds a named upstream server.
+async fn create_resolver(
+    session: Session,
+    State(state): State<Arc<AppState>>,
+    body: Result<Json<ResolverBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    session.require_admin()?;
+    let Json(body) = body.map_err(|e| ApiError::bad_request(e.body_text()))?;
+    let name = validate_resolver_name(body.name.as_deref().unwrap_or(""))?;
+    let url = body.url.trim().to_string();
+
+    let mut config = state.runtime().config.clone();
+    if config.resolvers.contains_key(&name) {
+        return Err(ApiError::bad_request(format!("a resolver named '{name}' already exists")));
+    }
+    if let Some(owner) = resolver_using_url(&config, &url, None) {
+        return Err(ApiError::bad_request(format!("'{owner}' already uses this URL")));
+    }
+    config.resolvers.insert(name.clone(), url);
+
+    let known = known_block_lists(&state).await?;
+    save_checked(&state, config, &known).await?;
+    Ok(Json(json!({ "ok": true, "name": name })))
+}
+
+/// `PUT /api/resolvers/{name}`: changes a resolver's URL and, when `name` differs
+/// from the path, renames it. A rename carries into every group that lists it.
+async fn update_resolver(
+    session: Session,
+    State(state): State<Arc<AppState>>,
+    Path(old): Path<String>,
+    body: Result<Json<ResolverBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    session.require_admin()?;
+    let Json(body) = body.map_err(|e| ApiError::bad_request(e.body_text()))?;
+
+    let mut config = state.runtime().config.clone();
+    if !config.resolvers.contains_key(&old) {
+        return Err(ApiError::not_found(format!("no resolver named '{old}'")));
+    }
+    let new = match body.name.as_deref() {
+        Some(raw) => validate_resolver_name(raw)?,
+        None => old.clone(),
+    };
+    let url = body.url.trim().to_string();
+    if new != old && config.resolvers.contains_key(&new) {
+        return Err(ApiError::bad_request(format!("a resolver named '{new}' already exists")));
+    }
+    if let Some(owner) = resolver_using_url(&config, &url, Some(&old)) {
+        return Err(ApiError::bad_request(format!("'{owner}' already uses this URL")));
+    }
+    if new != old {
+        config.rename_resolver(&old, &new);
+    }
+    config.resolvers.insert(new.clone(), url);
+
+    let known = known_block_lists(&state).await?;
+    save_checked(&state, config, &known).await?;
+    Ok(Json(json!({ "ok": true, "name": new })))
+}
+
+/// `DELETE /api/resolvers/{name}`. Refuses a resolver that a group still lists.
+async fn delete_resolver(
+    session: Session,
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    session.require_admin()?;
+
+    let mut config = state.runtime().config.clone();
+    if config.resolvers.remove(&name).is_none() {
+        return Err(ApiError::not_found(format!("no resolver named '{name}'")));
+    }
+    let groups: Vec<&str> = config
+        .upstream_groups
+        .iter()
+        .filter(|(_, names)| names.contains(&name))
+        .map(|(group, _)| group.as_str())
+        .collect();
+    if !groups.is_empty() {
+        return Err(ApiError::bad_request(format!(
+            "'{name}' is still used by {}. Remove it from those groups first",
+            groups.join(", ")
+        )));
+    }
 
     let known = known_block_lists(&state).await?;
     save_checked(&state, config, &known).await?;
