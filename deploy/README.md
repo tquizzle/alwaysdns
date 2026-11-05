@@ -89,9 +89,17 @@ listener binds `0.0.0.0:8080`. Without `0.0.0.0`, the container cannot be
 reached from the LAN. Set the upstream resolvers and any local records, such
 as `nas.test`.
 
+Upstream servers live under `resolvers`, each with a friendly name and one
+`https://` (DoH) or `quic://` (DoQ) URL. Each group in `upstream_groups` lists
+resolver names in failover order. A config from an older version, where the
+groups list raw URLs, is converted on the first start: each URL becomes a
+resolver named after its hostname, the groups are rewritten to use those names,
+and the old file is kept next to it as `config.yaml.bak`. Rename the resolvers
+afterwards in the Resolvers panel on the Clients page.
+
 The file lives in this deploy directory and the whole directory is mounted into
 the container at `/app/config`. The server saves changes made in the dashboard
-(lists, list assignments, clients, upstream groups and blocked domains) back to
+(lists, list assignments, clients, resolvers, upstream groups and blocked domains) back to
 this file, so `config.yaml` on the host always reflects the latest saved state.
 The dashboard has no page for editing the raw file. To apply a manual edit,
 restart the container, or call `POST /api/reload` with a logged-in session.
@@ -225,7 +233,8 @@ Upstreams can be `quic://` (DNS-over-QUIC, UDP 853) or `https://` (DNS-over-HTTP
 
 **Before cutover, check outbound UDP 853 from the Docker host:** a blocked UDP 853 shows as query timeouts on quic upstreams.
 
-If it is blocked, change those upstreams in `config.yaml` to DoH, for example:
+If it is blocked, change those resolvers to DoH, in the Resolvers panel on the
+Clients page or under `resolvers:` in `config.yaml`. For example:
 
 - `quic://def456.dns.nextdns.io` becomes `https://def456.dns.nextdns.io/dns-query`
 

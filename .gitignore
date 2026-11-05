@@ -6,6 +6,11 @@ target/
 .env.*
 !*.env.example
 
+# Deployment files that hold secrets or a live copy of the config
+deploy/dnsui.env
+deploy/config.yaml
+deploy/config.yaml.bak
+
 # Local tooling and captures (screenshots show real subnets and profile IDs)
 .claude/
 screenshots/
