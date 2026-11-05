@@ -1,9 +1,8 @@
-import { useMe, useHealth, useLogout } from './api/queries';
+import { useMe, useHealth } from './api/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorState, LoadingState } from './components/States';
-import { PaletteSelect } from './components/PaletteSelect';
+import { UserMenu } from './components/UserMenu';
 import { useHashRoute, type Route } from './lib/hashRoute';
-import { usePrefs } from './lib/prefs';
 import { BrandMark, LoginPage } from './pages/LoginPage';
 import { Dashboard } from './pages/Dashboard';
 import { QueryLogPage } from './pages/QueryLogPage';
@@ -46,7 +45,6 @@ export function App() {
 function Shell({ username, role }: { username: string; role: string }) {
   const [route, navigate] = useHashRoute();
   const isAdmin = role === 'admin';
-  const logout = useLogout();
 
   return (
     <div className="app">
@@ -75,20 +73,7 @@ function Shell({ username, role }: { username: string; role: string }) {
 
         <div className="topbar-right">
           <HealthPill />
-          <PaletteSelect />
-          <RedactToggle />
-          <span className="user-chip" title={`Signed in as ${username} (${role})`}>
-            {username}
-            <small>{role}</small>
-          </span>
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() => logout.mutate()}
-            disabled={logout.isPending}
-          >
-            Sign out
-          </button>
+          <UserMenu username={username} role={role} />
         </div>
       </header>
 
@@ -116,20 +101,5 @@ function HealthPill() {
     <span className={`pill ${health.data.ok ? 'pill-green' : 'pill-yellow'}`} role="status">
       {health.data.ok ? 'Healthy' : 'Degraded'} · v{health.data.version}
     </span>
-  );
-}
-
-function RedactToggle() {
-  const { redactAddresses, setRedactAddresses } = usePrefs();
-  return (
-    <button
-      type="button"
-      className="btn btn-small"
-      aria-pressed={redactAddresses}
-      title="Mask the last two octets of client addresses on screen"
-      onClick={() => setRedactAddresses(!redactAddresses)}
-    >
-      {redactAddresses ? 'IPs masked' : 'Mask IPs'}
-    </button>
   );
 }

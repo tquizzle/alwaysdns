@@ -60,7 +60,7 @@ export function DataTable<T>({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className={`table-wrap ${compact ? 'compact' : ''}`}>
+    <div className={`table-wrap stack ${compact ? 'compact' : ''}`}>
       <table aria-label={label}>
         <thead>
           {table.getHeaderGroups().map((group) => (
@@ -97,7 +97,11 @@ export function DataTable<T>({
           {rows.map((row) => (
             <tr key={row.id}>
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className={`col-${cell.column.id}`}>
+                <td
+                  key={cell.id}
+                  className={`col-${cell.column.id}`}
+                  data-label={typeof cell.column.columnDef.header === 'string' ? cell.column.columnDef.header : undefined}
+                >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>
               ))}
