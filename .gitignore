@@ -14,3 +14,6 @@ deploy/config.yaml.bak
 # Local tooling and captures (screenshots show real subnets and profile IDs)
 .claude/
 screenshots/
+
+# MaxMind GeoLite2 database (redistribution not allowed; see deploy/README.md)
+*.mmdb
