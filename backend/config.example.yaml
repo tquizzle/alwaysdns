@@ -28,7 +28,7 @@ clients:
   - name: Laptop
     cidrs: ["192.0.2.10/32", "198.51.100.65/32"]
     upstream_group: nextdns
-    block_lists: ["ads", "spy"]
+    block_lists: ["ads"]
     allow_domains: ["tracker.example.com"]     # suffix match, client-scoped
     block_domains: []
   - name: WiFi
@@ -48,9 +48,6 @@ clients:
 lists:
   ads:
     sources: ["https://example.com/hosts.txt"]
-    format: auto
-  spy:
-    sources: ["/etc/dnsui/lists/spy.txt"]
     format: auto
 
 # Allow lists. Same shape as `lists`, used as allow sources. An allow list

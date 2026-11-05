@@ -8,19 +8,24 @@ export const LIST_KIND_LABEL: Record<ListKind, string> = {
 
 export const MAX_LIST_URL_LENGTH = 2048;
 
-/** Returns a message for an unusable list URL, or null when it can be saved. */
-export function validateListUrl(input: string): string | null {
+/**
+ * Returns a message for an unusable list source, or null when it can be saved.
+ * A source is an http(s) URL or an absolute file path on the server, the same
+ * two forms the backend accepts.
+ */
+export function validateListSource(input: string): string | null {
   const value = input.trim();
-  if (value === '') return 'Enter the list URL.';
-  if (/\s/.test(value)) return 'The URL cannot contain spaces.';
+  if (value === '') return 'Enter a list URL or an absolute file path.';
   if (value.length > MAX_LIST_URL_LENGTH) {
-    return `The URL must be ${MAX_LIST_URL_LENGTH} characters or fewer.`;
+    return `The source must be ${MAX_LIST_URL_LENGTH} characters or fewer.`;
   }
+  if (value.startsWith('/')) return null;
+  if (/\s/.test(value)) return 'The URL cannot contain spaces.';
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return 'Enter a full URL, including http:// or https://.';
+    return 'Enter a full URL, including http:// or https://, or an absolute file path starting with /.';
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     return 'The URL must start with http:// or https://.';

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useCreateList } from '../api/queries';
 import type { ListKind } from '../api/types';
-import { LIST_KIND_LABEL, validateListName, validateListUrl } from '../lib/lists';
+import { LIST_KIND_LABEL, validateListName, validateListSource } from '../lib/lists';
 import { Notice } from './States';
 
 interface Props {
@@ -20,7 +20,7 @@ export function ListForm({ kind, onAdded }: Props) {
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const nameError = validateListName(name);
-    const urlError = validateListUrl(url);
+    const urlError = validateListSource(url);
     if (nameError || urlError) {
       setErrors({ name: nameError ?? undefined, url: urlError ?? undefined });
       return;
@@ -64,13 +64,12 @@ export function ListForm({ kind, onAdded }: Props) {
         </label>
 
         <label className="field wide">
-          <span>URL</span>
+          <span>URL or file path</span>
           <input
             name="url"
-            type="url"
             inputMode="url"
             value={url}
-            placeholder="https://example.com/hosts.txt"
+            placeholder="https://example.com/hosts.txt or /etc/dnsui/lists/custom.txt"
             autoComplete="off"
             spellCheck={false}
             aria-invalid={errors.url ? true : undefined}

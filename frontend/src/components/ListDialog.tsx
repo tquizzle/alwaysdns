@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useUpdateList } from '../api/queries';
 import type { FilterList } from '../api/types';
-import { validateListName, validateListUrl } from '../lib/lists';
+import { validateListName, validateListSource } from '../lib/lists';
 import { Modal } from './Modal';
 import { Notice } from './States';
 
@@ -22,7 +22,7 @@ export function ListDialog({ list, onClose, onSaved }: Props) {
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const nameError = validateListName(name);
-    const urlError = validateListUrl(url);
+    const urlError = validateListSource(url);
     if (nameError || urlError) {
       setErrors({ name: nameError ?? undefined, url: urlError ?? undefined });
       return;
@@ -60,10 +60,9 @@ export function ListDialog({ list, onClose, onSaved }: Props) {
         </label>
 
         <label className="field">
-          <span>URL</span>
+          <span>URL or file path</span>
           <input
             name="url"
-            type="url"
             inputMode="url"
             value={url}
             spellCheck={false}
