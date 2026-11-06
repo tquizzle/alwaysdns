@@ -17,3 +17,6 @@ screenshots/
 
 # MaxMind GeoLite2 database (redistribution not allowed; see deploy/README.md)
 *.mmdb
+
+# Local session notes (mention local paths; never publish)
+SESSION_HANDOFF.md
