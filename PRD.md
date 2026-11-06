@@ -20,6 +20,16 @@ The resolver sits on the path of every DNS query on the LAN, so the backend lang
 
 What Rust does not buy: faster answers when the upstream resolver is the bottleneck. Upstream round-trip time usually dominates a cache miss.
 
+## Compared with AdGuard Home and Pi-hole
+
+AdGuard Home and Pi-hole are the mature choices. This section says where AlwaysDNS differs, and where it does not.
+
+- **What AlwaysDNS has.** Named resolvers with their own status cards, error counts and p95 latency. Ordered failover groups that each client picks. DoH and DoQ upstreams. Per-client block lists and allow/block domains. A read-only viewer role that redacts client names and list URLs. An `import-adguard` command to move a config over. Caveat: this list comes from this PRD, not from a feature-by-feature check of the other two. AdGuard Home also has [per-client settings](https://github.com/AdguardTeam/AdGuardHome), so per-client control is not unique.
+- **What it lacks.** AdGuard Home has a built-in DHCP server, parental control and forced safe search ([README](https://github.com/AdguardTeam/AdGuardHome)). AlwaysDNS has none of these. It also does not serve encrypted DNS to clients: its listeners are UDP and TCP port 53 only. It has no audit, no community and one maintainer.
+- **Memory is a tie.** The production container measured 38.98 MiB (see Why Rust). A benchmark from a competing Rust DNS project reports about 39 MB idle for AdGuard Home ([source](https://awesome.ecosyste.ms/projects/github.com%2Femotionalamo%2Frust-dns-backend)). That is one interested source, so treat it as rough. Pi-hole's memory depends mostly on how many blocked domains it loads, plus per-domain metadata ([Pi-hole forum](https://discourse.pi-hole.net/t/what-determines-memory-usage/15652)). Users also report AdGuard Home memory spikes during filter updates ([GL-iNet forum](https://forum.gl-inet.com/t/adguard-home-memory-usage/65883)) and one report of 13.9 GiB after three days ([issue 6202](https://github.com/AdguardTeam/AdGuardHome/issues/6202)). These are single anecdotes. AlwaysDNS has not been measured over days, so it cannot claim better.
+- **Language.** Pi-hole's FTL is C built on dnsmasq ([Pi-hole](https://pi-hole.net/?p=14497)). AdGuard Home is Go, which is also memory-safe. Rust's clear edge is memory safety against C, not against Go.
+- **When to pick the others.** If you need DHCP, parental control, encrypted DNS serving or a large community, use AdGuard Home or Pi-hole. AlwaysDNS fits when you want its resolver cards, per-client failover groups and viewer role.
+
 ## Naming
 
 - The product is AlwaysDNS. The code and deploy files still use the name dnsui (container, env vars, volume, package names and paths).
