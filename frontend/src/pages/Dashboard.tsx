@@ -144,7 +144,7 @@ function DashboardBody({ stats }: { stats: Stats }) {
     // One shared two-column grid: every panel sits on the same column lines.
     // Rows that need the full width carry the dash-span class.
     <div className="dash-grid">
-      <section className="panel dash-span" aria-label="Resolver health and block rate">
+      <section className="panel dash-span" aria-label="Block rate and key figures">
         <div className="dash-top-grid">
           <Gauge value={blockRate} size={240} stroke={12} color={COLOR.red} orb label={`Block rate ${formatPercent(blockRate)}`}>
             <div className="hero-total">
@@ -153,26 +153,25 @@ function DashboardBody({ stats }: { stats: Stats }) {
               <span className="hero-label">{formatInt(stats.blocked)} of {formatInt(stats.total)}</span>
             </div>
           </Gauge>
-          <div className="dash-health">
-            <p className={`health-line ${health.degraded ? 'is-degraded' : ''}`}>
-              <strong>{health.text}</strong>
-            </p>
-            {stats.upstreams.length > 0 && (
-              <div className="upstream-grid compact">
-                {stats.upstreams.map((u) => (
-                  <UpstreamCard key={u.name} upstream={u} compact />
-                ))}
-              </div>
-            )}
-          </div>
+          <aside className="dash-kpis" aria-label="Key figures">
+            {kpis.map((k) => (
+              <KpiCard key={k.label} {...k} />
+            ))}
+          </aside>
         </div>
       </section>
 
-      <aside className="dash-kpis dash-span" aria-label="Key figures">
-        {kpis.map((k) => (
-          <KpiCard key={k.label} {...k} />
-        ))}
-      </aside>
+      <Panel title="Resolvers" subtitle={health.text} className={`dash-span ${health.degraded ? 'is-degraded' : ''}`}>
+        {stats.upstreams.length === 0 ? (
+          <EmptyState>No upstreams reported.</EmptyState>
+        ) : (
+          <div className="upstream-grid">
+            {stats.upstreams.map((u) => (
+              <UpstreamCard key={u.name} upstream={u} />
+            ))}
+          </div>
+        )}
+      </Panel>
 
       <Panel title="Queries and blocks" className="dash-span">
         {stats.timeline.length === 0 ? (
@@ -219,47 +218,39 @@ function DashboardBody({ stats }: { stats: Stats }) {
   );
 }
 
-interface UpstreamCardProps {
-  upstream: UpstreamStatus;
-  /** Smaller rings and no captions, for the cards beside the block-rate orb. */
-  compact?: boolean;
-}
-
-function UpstreamCard({ upstream, compact = false }: UpstreamCardProps) {
+function UpstreamCard({ upstream }: { upstream: UpstreamStatus }) {
   // The probe median is the steady figure. Live averages only cover servers that have traffic.
   const probed = upstream.probe_p50_ms != null;
   const latencyMs = probed ? (upstream.probe_p50_ms as number) : upstream.avg_ms;
   const lat = splitMs(latencyMs);
   const statusColor = upstream.ok ? COLOR.green : COLOR.red;
   const latColor = latencyTone(latencyMs);
-  const ring = compact ? 64 : 96;
-  const stroke = compact ? 6 : 8;
   return (
-    <div className={`upstream-card ${compact ? 'is-compact' : ''}`}>
+    <div className="upstream-card">
       <div className="upstream-head">
         <span className="upstream-name" title={upstream.url ?? upstream.name}>{upstream.name}</span>
         {upstream.protocol && <span className="badge badge-cyan">{PROTOCOL_LABEL[upstream.protocol]}</span>}
       </div>
       <div className="upstream-rings">
         <div className="mini">
-          <Gauge value={upstream.ok ? 1 : 0} size={ring} stroke={stroke} color={statusColor} label={`${upstream.name} status ${upstream.ok ? 'ok' : 'down'}`}>
+          <Gauge value={upstream.ok ? 1 : 0} size={96} stroke={8} color={statusColor} label={`${upstream.name} status ${upstream.ok ? 'ok' : 'down'}`}>
             <span className="mini-text" style={{ color: statusColor }}>{upstream.ok ? 'OK' : 'DOWN'}</span>
           </Gauge>
-          {!compact && <span className="mini-caption">Status</span>}
+          <span className="mini-caption">Status</span>
         </div>
         <div className="mini">
-          <Gauge value={clamp01(latencyMs / 500)} size={ring} stroke={stroke} color={latColor} label={`${upstream.name} ${probed ? 'probe median' : 'live average'} latency ${lat.value} ${lat.unit}`}>
+          <Gauge value={clamp01(latencyMs / 500)} size={96} stroke={8} color={latColor} label={`${upstream.name} ${probed ? 'probe median' : 'live average'} latency ${lat.value} ${lat.unit}`}>
             <span className="mini-text">{lat.value}<small> {lat.unit}</small></span>
           </Gauge>
-          {!compact && <span className="mini-caption">{probed ? 'Probe median' : 'Live average'}</span>}
+          <span className="mini-caption">{probed ? 'Probe median' : 'Live average'}</span>
         </div>
       </div>
       <div className="upstream-foot">
         <span className={upstream.errors > 0 ? 'text-red' : 'muted'}>{formatInt(upstream.errors)} errors</span>
-        {!compact && upstream.probe_p95_ms != null && (
+        {upstream.probe_p95_ms != null && (
           <span className="muted"> · p95 {Math.round(upstream.probe_p95_ms)} ms</span>
         )}
-        {!compact && probed && upstream.avg_ms > 0 && (
+        {probed && upstream.avg_ms > 0 && (
           <span className="muted"> · live {Math.round(upstream.avg_ms)} ms</span>
         )}
       </div>

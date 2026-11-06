@@ -725,19 +725,9 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
   .client-form .form-grid { grid-template-columns: 1fr; }
 }
 
-/* Dashboard top: the block-rate orb beside compact upstream cards, then the KPI cards. */
+/* Dashboard top: the block-rate orb. */
 .dash-top-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; }
-.dash-health { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.health-line { margin: 0; font-size: 0.95rem; }
-.health-line strong { color: var(--green); font-weight: 600; }
-.health-line.is-degraded strong { color: var(--yellow); }
 .hero-number.is-red { color: var(--red); text-shadow: 0 0 18px rgba(var(--red-rgb), 0.5); }
-.upstream-grid.compact { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
-.upstream-card.is-compact { padding: 8px 10px; gap: 6px; }
-.is-compact .upstream-rings { justify-content: flex-start; gap: 14px; }
-.is-compact .mini-text { font-size: 0.78rem; }
-.is-compact .mini-text small { display: block; font-size: 0.75rem; line-height: 1; }
-.is-compact .upstream-foot { font-size: 0.75rem; }
 
 /* Blocked panel, domain links and the collapsed traffic insight */
 .blocked-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; }
@@ -748,6 +738,15 @@ details.insight > summary { cursor: pointer; font-weight: 600; color: var(--acce
 details.insight[open] > summary { margin-bottom: 12px; }
 @media (max-width: 900px) {
   .dash-top-grid { grid-template-columns: 1fr; justify-items: center; }
-  .dash-health { width: 100%; }
-  .blocked-split { grid-template-columns: 1fr; }
+    .blocked-split { grid-template-columns: 1fr; }
+}
+
+/* Orb with the KPI cards beside it; the resolver cards get their own row below. */
+.dash-top-grid .dash-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.is-degraded > .panel-sub { color: var(--yellow); }
+@media (max-width: 720px) {
+  .dash-top-grid .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+}
+@media (max-width: 420px) {
+  .dash-top-grid .dash-kpis { grid-template-columns: 1fr; }
 }
