@@ -144,20 +144,39 @@ function DashboardBody({ stats }: { stats: Stats }) {
     // One shared two-column grid: every panel sits on the same column lines.
     // Rows that need the full width carry the dash-span class.
     <div className="dash-grid">
-      <section className="panel dash-span" aria-label="Block rate and key figures">
+      <section className="panel dash-span" aria-label="Total queries, key figures and block rate">
         <div className="dash-top-grid">
-          <Gauge value={blockRate} size={240} stroke={12} color={COLOR.red} orb label={`Block rate ${formatPercent(blockRate)}`}>
-            <div className="hero-total">
-              <span className="hero-label">Block rate</span>
-              <span className="hero-number is-red">{formatPercent(blockRate)}</span>
-              <span className="hero-label">{formatInt(stats.blocked)} of {formatInt(stats.total)}</span>
-            </div>
-          </Gauge>
+          <div className="orb-slot orb-total">
+            <Gauge
+              value={1 - blockRate}
+              size={240}
+              stroke={12}
+              color={COLOR.green}
+              colorEnd={COLOR.cyan}
+              orb
+              label={`Total queries ${formatInt(stats.total)}, ${formatPercent(1 - blockRate)} answered`}
+            >
+              <div className="hero-total">
+                <span className="hero-label">Total queries</span>
+                <span className="hero-number">{formatInt(stats.total)}</span>
+                <span className="hero-label">{formatPercent(1 - blockRate)} answered</span>
+              </div>
+            </Gauge>
+          </div>
           <aside className="dash-kpis" aria-label="Key figures">
             {kpis.map((k) => (
               <KpiCard key={k.label} {...k} />
             ))}
           </aside>
+          <div className="orb-slot orb-block">
+            <Gauge value={blockRate} size={240} stroke={12} color={COLOR.red} orb label={`Block rate ${formatPercent(blockRate)}`}>
+              <div className="hero-total">
+                <span className="hero-label">Block rate</span>
+                <span className="hero-number is-red">{formatPercent(blockRate)}</span>
+                <span className="hero-label">{formatInt(stats.blocked)} of {formatInt(stats.total)}</span>
+              </div>
+            </Gauge>
+          </div>
         </div>
       </section>
 

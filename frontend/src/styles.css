@@ -726,7 +726,11 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
 }
 
 /* Dashboard top: the block-rate orb. */
-.dash-top-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; }
+.dash-top-grid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "total kpis block"; gap: 20px; align-items: center; }
+.orb-slot { display: grid; place-items: center; min-width: 0; }
+.orb-total { grid-area: total; }
+.orb-block { grid-area: block; }
+.dash-top-grid .dash-kpis { grid-area: kpis; }
 .hero-number.is-red { color: var(--red); text-shadow: 0 0 18px rgba(var(--red-rgb), 0.5); }
 
 /* Blocked panel, domain links and the collapsed traffic insight */
@@ -737,8 +741,13 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
 details.insight > summary { cursor: pointer; font-weight: 600; color: var(--accent-soft); list-style-position: inside; }
 details.insight[open] > summary { margin-bottom: 12px; }
 @media (max-width: 900px) {
-  .dash-top-grid { grid-template-columns: 1fr; justify-items: center; }
-    .blocked-split { grid-template-columns: 1fr; }
+  /* Orbs side by side on top, the KPI cards across the full width below. */
+  .dash-top-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "total block" "kpis kpis"; }
+  .blocked-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  /* The ring is an SVG, so it scales to fit two across a phone. */
+  .orb-slot .gauge { width: min(240px, 42vw) !important; height: min(240px, 42vw) !important; }
 }
 
 /* Orb with the KPI cards beside it; the resolver cards get their own row below. */

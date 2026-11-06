@@ -7,6 +7,8 @@ interface GaugeProps {
   size?: number;
   stroke?: number;
   color: string;
+  /** When set, the ring fades from `color` to this colour. */
+  colorEnd?: string;
   trackColor?: string;
   /** Adds the tick ring and the orb backdrop used by the hero gauge. */
   orb?: boolean;
@@ -20,6 +22,7 @@ export function Gauge({
   size = 200,
   stroke = 12,
   color,
+  colorEnd,
   trackColor = 'rgba(var(--edge-rgb), 0.12)',
   orb = false,
   label,
@@ -46,6 +49,12 @@ export function Gauge({
             <stop offset="70%" style={{ stopColor: 'var(--bg-bottom)', stopOpacity: 0.6 }} />
             <stop offset="100%" style={{ stopColor: 'var(--bg-top)', stopOpacity: 0 }} />
           </radialGradient>
+          {colorEnd && (
+            <linearGradient id={`${id}-ring`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={color} />
+              <stop offset="100%" stopColor={colorEnd} />
+            </linearGradient>
+          )}
           <filter id={`${id}-glow`} x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="4" result="blur" />
             <feMerge>
@@ -82,7 +91,7 @@ export function Gauge({
           cy={center}
           r={radius}
           fill="none"
-          stroke={color}
+          stroke={colorEnd ? `url(#${id}-ring)` : color}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={`${circumference * fraction} ${circumference}`}
