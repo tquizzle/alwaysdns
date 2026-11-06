@@ -52,6 +52,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/querylog", get(querylog))
         .route("/api/history", get(history))
         .route("/api/clients", get(clients).post(create_client))
+        .route("/api/services", get(services))
         .route("/api/lists", get(lists).post(create_list))
         .route("/api/lists/refresh", post(refresh_lists))
         .route("/api/lists/{id}", put(update_list).delete(delete_list))
@@ -750,6 +751,8 @@ struct ClientView {
     block_domains: Option<Vec<String>>,
     upstream_group: String,
     block_lists: Vec<String>,
+    /// Apps blocked for this client, by catalogue id.
+    blocked_services: Vec<String>,
     /// Queries in the last hour.
     queries: u64,
     /// Blocked queries in the last hour.
@@ -779,6 +782,7 @@ async fn clients(
                     .clone()
                     .unwrap_or_else(|| rt.config.default_upstream_group.clone()),
                 block_lists: c.block_lists.clone(),
+                blocked_services: c.blocked_services.clone(),
                 queries,
                 blocked,
             }
@@ -948,6 +952,18 @@ fn lists_view(state: &AppState, admin: bool) -> anyhow::Result<ListsView> {
         allow.extend(from_config("allow", name, cfg, loaded));
     }
     Ok(ListsView { block, allow })
+}
+
+/// `GET /api/services`: the apps a client can block, from the catalogue. `note` is set
+/// when the cached copy is in use because the download failed.
+async fn services(_session: Session, State(state): State<Arc<AppState>>) -> Json<Value> {
+    let rt = state.runtime();
+    let items: Vec<Value> = rt
+        .catalogue
+        .iter()
+        .map(|s| json!({ "id": s.id, "name": s.name, "group": s.group, "domains": s.data.domains.len() }))
+        .collect();
+    Json(json!({ "services": items, "note": rt.catalogue.note }))
 }
 
 async fn lists(session: Session, State(state): State<Arc<AppState>>) -> Result<Json<ListsView>, ApiError> {
@@ -1337,6 +1353,14 @@ struct ClientBody {
     block_lists: Vec<String>,
     allow_domains: Vec<String>,
     block_domains: Vec<String>,
+    blocked_services: Vec<String>,
+}
+
+/// An app id from the catalogue: lowercase letters, digits and underscores.
+/// Only the shape is checked here. The catalogue may be offline when a client is
+/// saved, and an id it no longer lists is skipped when the rules are built.
+fn is_service_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
 /// Checks the group and block-list references, then builds the client they describe.
@@ -1356,6 +1380,13 @@ fn client_from_body(
         }
         push_unique(&mut block_lists, &list);
     }
+    let mut blocked_services: Vec<String> = Vec::new();
+    for id in body.blocked_services {
+        if !is_service_id(&id) {
+            return Err(ApiError::bad_request(format!("'{id}' is not a valid app id")));
+        }
+        push_unique(&mut blocked_services, &id);
+    }
     Ok(ClientConfig {
         name,
         cidrs: clean_list(body.cidrs),
@@ -1363,6 +1394,7 @@ fn client_from_body(
         block_lists,
         allow_domains: clean_list(body.allow_domains),
         block_domains: clean_list(body.block_domains),
+        blocked_services,
     })
 }
 
@@ -1810,6 +1842,16 @@ mod assignment_tests {
         assert_eq!(names, vec!["ads".to_string(), "spy".to_string()]);
         set_member(&mut names, "ads", false);
         assert_eq!(names, vec!["spy".to_string()]);
+    }
+
+    #[test]
+    fn service_ids_are_the_catalogue_shape() {
+        for ok in ["youtube", "4chan", "amazon_streaming"] {
+            assert!(is_service_id(ok), "{ok} should be accepted");
+        }
+        for bad in ["", "YouTube", "you tube", "a-b", "x".repeat(65).as_str(), "../etc"] {
+            assert!(!is_service_id(bad), "{bad:?} should be rejected");
+        }
     }
 
     #[test]

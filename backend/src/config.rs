@@ -132,6 +132,9 @@ pub struct ClientConfig {
     pub allow_domains: Vec<String>,
     #[serde(default)]
     pub block_domains: Vec<String>,
+    /// Apps blocked for this client, by catalogue id (see `services.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_services: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

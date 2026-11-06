@@ -17,7 +17,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::adguard::AdGuardSource;
 use crate::auth::{Sessions, Users};
@@ -26,6 +26,7 @@ use crate::config::{Config, ListConfig, ListFormat};
 use crate::db::{self, Db, ListPatch, ListRecord};
 use crate::engine::Runtime;
 use crate::lists::{ListData, load_list, load_lists_map};
+use crate::services::{self, Catalogue};
 use crate::models::UpstreamStat;
 use crate::upstream::{PROBE_INTERVAL, PROBE_NAMES};
 use crate::recorder::{CHANNEL_CAPACITY, LogSink};
@@ -133,6 +134,7 @@ impl AppState {
             &mut cache,
             config,
             &Refresh::All,
+            None,
         )
         .await?;
         upstreams.set_bootstrap(runtime.config.bootstrap.clone());
@@ -302,6 +304,7 @@ impl AppState {
             cache,
             config,
             refresh,
+            Some(self.runtime().catalogue.clone()),
         )
         .await?;
         self.install(runtime);
@@ -409,6 +412,7 @@ async fn assemble(
     cache: &mut SourceCache,
     config: Config,
     refresh: &Refresh,
+    prev_catalogue: Option<Arc<Catalogue>>,
 ) -> Result<(Runtime, ReloadSummary)> {
     let (block, allow) = match db {
         Some(db) => load_from_db(http, cache_dir, db, cache, refresh).await?,
@@ -421,8 +425,35 @@ async fn assemble(
     };
     let summary = summarize(&block, &allow);
     let allow_lists: Vec<(String, Arc<ListData>)> = allow.into_iter().collect();
-    let runtime = Runtime::build_with(config, block, allow_lists)?;
+    let catalogue = catalogue_for(http, cache_dir, refresh, prev_catalogue).await;
+    let runtime = Runtime::build_with(config, block, allow_lists)?.with_services(catalogue);
     Ok((runtime, summary))
+}
+
+/// The app catalogue for the next snapshot. It is downloaded on a full refresh (start-up,
+/// reload and the daily pass) and reused when only assignments changed. If the download
+/// fails, the catalogue already in use stays, so a network outage never un-blocks an app.
+async fn catalogue_for(
+    http: &reqwest::Client,
+    cache_dir: &Path,
+    refresh: &Refresh,
+    prev: Option<Arc<Catalogue>>,
+) -> Arc<Catalogue> {
+    if let (Refresh::Rows(_), Some(prev)) = (refresh, &prev) {
+        if !prev.is_empty() {
+            return prev.clone();
+        }
+    }
+    match services::load_catalogue(http, cache_dir).await {
+        Ok(catalogue) => {
+            info!(services = catalogue.len(), "app catalogue loaded");
+            Arc::new(catalogue)
+        }
+        Err(e) => {
+            warn!(error = %e, "app catalogue unavailable; blocking apps with what is already loaded");
+            prev.unwrap_or_default()
+        }
+    }
 }
 
 type Lists = BTreeMap<String, Arc<ListData>>;

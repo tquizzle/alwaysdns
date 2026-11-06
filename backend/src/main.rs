@@ -21,6 +21,7 @@ mod models;
 mod recorder;
 mod redact;
 mod rules;
+mod services;
 mod telemetry;
 mod upstream;
 

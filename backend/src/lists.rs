@@ -276,7 +276,7 @@ pub async fn load_list(
 /// Returns the text of one source. For URLs, a successful download is written
 /// to the cache, and a failed download falls back to the cached copy. The
 /// second value is a note when the cached copy was used.
-async fn fetch_source(
+pub(crate) async fn fetch_source(
     http: &reqwest::Client,
     source: &str,
     cache_dir: &Path,

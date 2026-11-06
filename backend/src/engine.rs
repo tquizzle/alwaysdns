@@ -11,6 +11,7 @@ use tracing::warn;
 use crate::config::{Config, parse_client_cidrs};
 use crate::lists::ListData;
 use crate::rules::{CidrTable, DomainSet, RewriteTable, match_suffix, normalize_rule_domain};
+use crate::services::Catalogue;
 
 /// Outcome of the policy checks, before any answer is produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +58,8 @@ pub struct Runtime {
     pub global_allow_lists: Vec<(String, Arc<ListData>)>,
     global_block: DomainSet,
     rewrites: RewriteTable,
+    /// Apps clients can block. Empty until `with_services` supplies the catalogue.
+    pub catalogue: Arc<Catalogue>,
 }
 
 fn domain_set(items: &[String]) -> DomainSet {
@@ -128,9 +131,32 @@ impl Runtime {
             global_allow_lists,
             global_block: domain_set(&config.block_domains),
             rewrites: RewriteTable::build(&rewrite_rules)?,
+            catalogue: Arc::new(Catalogue::default()),
             lists,
             config,
         })
+    }
+
+    /// Adds each client's blocked apps to its block lists. An id missing from the
+    /// catalogue is skipped with a warning, like a list that is not loaded: a catalogue
+    /// that is down or has dropped a service must not stop DNS.
+    pub fn with_services(mut self, catalogue: Arc<Catalogue>) -> Self {
+        for (runtime, configured) in self.clients.iter_mut().zip(&self.config.clients) {
+            for id in &configured.blocked_services {
+                match catalogue.get(id) {
+                    Some(service) => runtime
+                        .block_lists
+                        .push((service.data.name.clone(), service.data.clone())),
+                    None => warn!(
+                        service = %id,
+                        client = %configured.name,
+                        "blocked app is not in the catalogue; ignoring it"
+                    ),
+                }
+            }
+        }
+        self.catalogue = catalogue;
+        self
     }
 
     /// Client index for a source address, if any CIDR matches.
@@ -346,6 +372,62 @@ lists:
         let d = rt.decide(ip("192.168.50.1"), "pixel.doubleclick.net");
         assert_eq!(d.verdict, Verdict::Allowed);
         assert_eq!(d.rule, "allow:list:trusted:doubleclick.net");
+    }
+
+    const APPS_CFG: &str = r#"
+bootstrap: ["9.9.9.10"]
+upstream_groups:
+  default: ["https://dns10.quad9.net/dns-query"]
+clients:
+  - name: Kid
+    cidrs: ["10.0.3.0/24"]
+    blocked_services: ["youtube", "no_such_app"]
+  - name: Parent
+    cidrs: ["10.0.4.0/24"]
+"#;
+
+    const APPS_CATALOGUE: &str = r#"{"blocked_services": [
+        {"id": "youtube", "name": "YouTube", "group": "streaming", "rules": ["||youtube.com^", "||googlevideo.com^"]}
+    ]}"#;
+
+    fn apps_runtime() -> Runtime {
+        let config = Config::parse_yaml(APPS_CFG).unwrap();
+        let catalogue = crate::services::parse_catalogue(APPS_CATALOGUE).unwrap();
+        Runtime::build_with(config, BTreeMap::new(), Vec::new())
+            .unwrap()
+            .with_services(Arc::new(catalogue))
+    }
+
+    #[test]
+    fn a_blocked_app_blocks_its_domains_for_that_client_only() {
+        let rt = apps_runtime();
+        let kid = rt.decide(ip("10.0.3.7"), "rr1.googlevideo.com");
+        assert_eq!(kid.verdict, Verdict::Blocked);
+        assert_eq!(kid.rule, "list:app/youtube:googlevideo.com");
+        // Another client, and an unknown one, still reach the app.
+        assert_eq!(rt.decide(ip("10.0.4.7"), "www.youtube.com").verdict, Verdict::Pass);
+        assert_eq!(rt.decide(ip("192.168.50.1"), "www.youtube.com").verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn an_app_missing_from_the_catalogue_is_ignored_not_fatal() {
+        // "no_such_app" is on the client but not in the catalogue. DNS must still work.
+        let rt = apps_runtime();
+        assert_eq!(rt.decide(ip("10.0.3.7"), "example.com").verdict, Verdict::Pass);
+    }
+
+    #[test]
+    fn a_client_allow_rule_overrides_a_blocked_app() {
+        let yaml = APPS_CFG.replace(
+            "blocked_services: [\"youtube\", \"no_such_app\"]",
+            "blocked_services: [\"youtube\"]\n    allow_domains: [\"music.youtube.com\"]",
+        );
+        let catalogue = crate::services::parse_catalogue(APPS_CATALOGUE).unwrap();
+        let rt = Runtime::build_with(Config::parse_yaml(&yaml).unwrap(), BTreeMap::new(), Vec::new())
+            .unwrap()
+            .with_services(Arc::new(catalogue));
+        assert_eq!(rt.decide(ip("10.0.3.7"), "music.youtube.com").verdict, Verdict::Allowed);
+        assert_eq!(rt.decide(ip("10.0.3.7"), "www.youtube.com").verdict, Verdict::Blocked);
     }
 
     #[test]

@@ -153,6 +153,7 @@ pub fn import_adguard(text: &str) -> Result<(Config, ImportReport)> {
             block_lists: enabled_lists.clone(),
             allow_domains: Vec::new(),
             block_domains: Vec::new(),
+            blocked_services: Vec::new(),
         });
     }
     report.clients = clients.len();
