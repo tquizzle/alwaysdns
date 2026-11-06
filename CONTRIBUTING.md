@@ -68,4 +68,4 @@ Do not post a vulnerability, or a way to exploit one, in a public issue. Contact
 
 ## Licence
 
-The project does not have a licence file yet. If you plan a large contribution, ask the maintainer first.
+AlwaysDNS is released under the [MIT licence](LICENSE). By sending a contribution you agree that it is licensed under the same terms.
