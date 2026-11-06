@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 
 pub const SESSION_COOKIE: &str = "dnsui_session";
 const SESSION_TTL: Duration = Duration::from_secs(12 * 60 * 60);
+/// Upper bound on live sessions. There are at most two accounts, so this is generous.
+/// When it is reached, the oldest session is dropped to make room.
+const MAX_SESSIONS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -211,6 +214,13 @@ impl Sessions {
         if let Ok(mut map) = self.inner.lock() {
             let now = Instant::now();
             map.retain(|_, s| s.expires > now);
+            // The TTL is fixed, so the earliest expiry is the oldest session.
+            while map.len() >= MAX_SESSIONS {
+                let Some(oldest) = map.iter().min_by_key(|(_, s)| s.expires).map(|(k, _)| k.clone()) else {
+                    break;
+                };
+                map.remove(&oldest);
+            }
             map.insert(
                 token.clone(),
                 Session {
@@ -368,5 +378,16 @@ mod tests {
         assert_eq!(s.lookup(&token), Some(("admin".to_string(), Role::Admin)));
         s.remove(&token);
         assert_eq!(s.lookup(&token), None);
+    }
+
+    #[test]
+    fn session_count_is_capped_and_the_oldest_is_dropped() {
+        let s = Sessions::new();
+        let first = s.create("admin", Role::Admin);
+        let tokens: Vec<String> = (0..MAX_SESSIONS).map(|_| s.create("admin", Role::Admin)).collect();
+        assert_eq!(s.inner.lock().unwrap().len(), MAX_SESSIONS);
+        assert_eq!(s.lookup(&first), None, "the oldest session is evicted");
+        let newest = tokens.last().unwrap();
+        assert_eq!(s.lookup(newest), Some(("admin".to_string(), Role::Admin)));
     }
 }
