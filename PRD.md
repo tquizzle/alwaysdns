@@ -25,7 +25,7 @@ What Rust does not buy: faster answers when the upstream resolver is the bottlen
 AdGuard Home and Pi-hole are the mature choices. This section says where AlwaysDNS differs, and where it does not.
 
 - **What AlwaysDNS has.** Named resolvers with their own status cards, error counts and p95 latency. Ordered failover groups that each client picks. DoH and DoQ upstreams. Per-client block lists and allow/block domains. A read-only viewer role that redacts client names and list URLs. An `import-adguard` command to move a config over. Caveat: this list comes from this PRD, not from a feature-by-feature check of the other two. AdGuard Home also has [per-client settings](https://github.com/AdguardTeam/AdGuardHome), so per-client control is not unique.
-- **What it lacks.** AdGuard Home has a built-in DHCP server, parental control and forced safe search ([README](https://github.com/AdguardTeam/AdGuardHome)). AlwaysDNS has none of these. It also does not serve encrypted DNS to clients: its listeners are UDP and TCP port 53 only. It has no audit, no community and one maintainer.
+- **What it lacks.** AdGuard Home has a built-in DHCP server, parental control and forced safe search ([README](https://github.com/AdguardTeam/AdGuardHome)). AlwaysDNS has no DHCP server and no forced safe search yet (it is planned as a later phase). It covers part of parental control with per-client adult-content and app blocking, and does not use AdGuard's hosted parental control service. It also does not serve encrypted DNS to clients: its listeners are UDP and TCP port 53 only. It has no audit, no community and one maintainer.
 - **Memory is a tie.** The production container measured 38.98 MiB (see Why Rust). A benchmark from a competing Rust DNS project reports about 39 MB idle for AdGuard Home ([source](https://awesome.ecosyste.ms/projects/github.com%2Femotionalamo%2Frust-dns-backend)). That is one interested source, so treat it as rough. Pi-hole's memory depends mostly on how many blocked domains it loads, plus per-domain metadata ([Pi-hole forum](https://discourse.pi-hole.net/t/what-determines-memory-usage/15652)). Users also report AdGuard Home memory spikes during filter updates ([GL-iNet forum](https://forum.gl-inet.com/t/adguard-home-memory-usage/65883)) and one report of 13.9 GiB after three days ([issue 6202](https://github.com/AdguardTeam/AdGuardHome/issues/6202)). These are single anecdotes. AlwaysDNS has not been measured over days, so it cannot claim better.
 - **Language.** Pi-hole's FTL is C built on dnsmasq ([Pi-hole](https://pi-hole.net/?p=14497)). AdGuard Home is Go, which is also memory-safe. Rust's clear edge is memory safety against C, not against Go.
 - **When to pick the others.** If you need DHCP, parental control, encrypted DNS serving or a large community, use AdGuard Home or Pi-hole. AlwaysDNS fits when you want its resolver cards, per-client failover groups and viewer role.
@@ -52,6 +52,9 @@ AdGuard Home and Pi-hole are the mature choices. This section says where AlwaysD
 - Each client has an upstream group, assigned block lists, and its own allow and block domains.
 - Devices that match no client use the default block lists.
 - Admins add, edit and delete clients on the Clients page.
+- **Block adult content** is a switch in the client dialog. It assigns the StevenBlack porn-only list (MIT licence, about 77,000 domains), which is added to the Lists page on first use.
+- **Blocked apps** are chosen in the client dialog from a searchable, grouped list (YouTube, Discord, TikTok and so on). The catalogue has 142 apps, taken from AdGuard's HostlistsRegistry. It is downloaded at start-up and on the daily refresh, cached on disk, and never bundled, because its repository is GPL-3.0. A blocked app blocks its domains for that client only. The query log shows the rule as `list:app/<id>:<domain>`, and the blocked-by-list panel counts each app separately.
+- Limits of app blocking: rules that are wildcards, start anchors or `$dnstype` are skipped (51 of 2,406 in the catalogue when checked), so an app block can miss some of its domains. DNS blocking is also not airtight, because apps with their own hardcoded DNS or IP addresses can bypass it. If the catalogue cannot be downloaded, the last loaded copy stays in use.
 
 ### Block and allow lists
 
@@ -109,6 +112,7 @@ AdGuard Home and Pi-hole are the mature choices. This section says where AlwaysD
 - A Caddy site on another host serves the UI at `https://dns.example.test`.
 - Port 53 must be free on the host. On Ubuntu this usually means disabling systemd-resolved.
 - `quic://` upstreams need outbound UDP 853. If it is blocked, those queries time out. Change the resolver to its `https://` (DoH) URL and reload.
+- The app catalogue needs outbound HTTPS to `adguardteam.github.io`. Start-up waits for that download, which took about 10 seconds in a local test, and falls back to the cached copy if it fails.
 - The destination map needs a MaxMind GeoLite2-Country database. It is not included, because MaxMind does not allow redistribution. Copy it into the data volume and restart.
 - Updates: `docker compose up -d --build`. The data volume keeps its contents across rebuilds.
 
@@ -123,6 +127,7 @@ The UI/UX overhaul from the design review is complete in the code on the main br
 3. Resolvers, groups and clients flow: an Upstreams page for resolvers, then groups, with the Clients page linking to it.
 4. Dashboard redesign: the total queries and block rate orbs, full-size resolver cards, the merged Blocked panel, and a collapsed Traffic insight section.
 5. Styling polish and shared design tokens: colour tokens and a trimmed type scale.
+6. Per-client parental controls: a Block adult content switch and a blocked-apps picker in the client dialog, backed by the AdGuard services catalogue. Forced safe search is the planned next phase and is not built.
 
 ### Still open
 

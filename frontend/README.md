@@ -52,7 +52,8 @@ A 401 from any protected endpoint returns the user to the login page.
   order. A resolver that a group lists, or a group that a client uses, cannot be deleted, and the reason is shown next
   to the disabled button.
 - **Clients**: configured clients with their networks, upstream group, block-list assignments and query counts. Admins
-  can add, edit and delete clients and assign a group and block lists to each.
+  can add, edit and delete clients and assign a group and block lists to each. The client dialog also has a Block adult
+  content switch and a searchable list of apps to block (YouTube, Discord and so on) from the AdGuard services catalogue.
 - **Top bar**: health status and version, and an account menu with a colour palette picker, a Mask IPs toggle that hides
   the last two octets of client addresses on screen, and Sign out. Both settings are saved in the browser. On phones the
   tables turn into stacked cards.
