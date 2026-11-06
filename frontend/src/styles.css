@@ -263,8 +263,34 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .segmented button:hover { color: var(--text); }
 .segmented button.active { background: rgba(var(--accent-rgb), 0.2); color: var(--cyan); font-weight: 600; }
 
-.login-screen { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-.login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 24px; }
+.login-screen { min-height: 100vh; display: grid; grid-template-rows: 1fr auto; place-items: center; padding: 16px; }
+.login-card { width: min(380px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 24px; align-self: center; }
+
+/* Footer */
+
+.site-footer {
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 16px;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.site-footer p { margin: 0; }
+.site-footer nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover, .site-footer a:focus-visible { color: var(--accent-soft); text-decoration: underline; }
+.login-screen .site-footer { border-top: 0; justify-content: center; text-align: center; }
+@media (max-width: 720px) {
+  .site-footer { justify-content: center; text-align: center; }
+  .site-footer a { display: inline-block; padding: 12px 0; }
+}
 
 /* States */
 

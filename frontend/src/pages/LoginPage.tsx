@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../api/client';
 import { useLogin } from '../api/queries';
+import { Footer } from '../components/Footer';
 
 export function LoginPage() {
   const login = useLogin();
@@ -64,6 +65,7 @@ export function LoginPage() {
           {login.isPending ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
+      <Footer />
     </main>
   );
 }

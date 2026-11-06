@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useMe, useHealth } from './api/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorState, LoadingState } from './components/States';
+import { Footer } from './components/Footer';
 import { UserMenu } from './components/UserMenu';
 import { useHashRoute, type Route } from './lib/hashRoute';
 import { NavIcon } from './components/NavIcon';
@@ -99,6 +100,8 @@ function Shell({ username, role }: { username: string; role: string }) {
           {route === 'clients' && <ClientsPage />}
         </ErrorBoundary>
       </main>
+
+      <Footer />
     </div>
   );
 }
