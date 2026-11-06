@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 
-export const ROUTES = ['dashboard', 'querylog', 'lists', 'upstreams', 'clients'] as const;
+export const ROUTES = ['dashboard', 'querylog', 'lists', 'upstreams', 'clients', 'settings'] as const;
 export type Route = (typeof ROUTES)[number];
 
 function currentRoute(): Route {

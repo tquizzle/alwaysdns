@@ -19,6 +19,7 @@ import type {
   QueryLogParams,
   RangeKey,
   ResolverBody,
+  SettingsBody,
 } from './types';
 
 export const POLL_STATS_MS = 5_000;
@@ -34,6 +35,7 @@ export const queryKeys = {
   lists: ['lists'] as const,
   clients: ['clients'] as const,
   services: ['services'] as const,
+  settings: ['settings'] as const,
   health: ['health'] as const,
 };
 
@@ -177,6 +179,24 @@ export function useClients() {
     queryKey: queryKeys.clients,
     queryFn: api.clients,
     refetchInterval: POLL_CLIENTS_MS,
+  });
+}
+
+/** Admin only: local answers, global allow and block domains, bootstrap, default group and retention. */
+export function useSettings() {
+  return useQuery({ queryKey: queryKeys.settings, queryFn: api.settings });
+}
+
+export function useUpdateSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SettingsBody) => api.updateSettings(body),
+    // The default upstream group also shows on the Clients and Upstreams pages.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.settings }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.clients }),
+      ]),
   });
 }
 

@@ -3,6 +3,14 @@ import type { Route } from '../lib/hashRoute';
 
 /** Inner shapes of each nav icon, drawn on a 20 unit grid with the same stroke as the rings. */
 const SHAPES: Record<Route, ReactNode> = {
+  settings: (
+    <>
+      <path d="M3.5 6h13M3.5 10h13M3.5 14h13" />
+      <circle cx="7" cy="6" r="1.7" />
+      <circle cx="13" cy="10" r="1.7" />
+      <circle cx="8.5" cy="14" r="1.7" />
+    </>
+  ),
   dashboard: (
     <>
       <path d="M3.5 13a6.5 6.5 0 0 1 13 0" />

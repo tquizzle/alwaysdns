@@ -25,6 +25,8 @@ import type {
   RefreshListsResponse,
   ResolverBody,
   ServicesResponse,
+  Settings,
+  SettingsBody,
   Stats,
 } from './types';
 
@@ -68,6 +70,11 @@ export const api = {
   clients: () => apiRequest<ClientsResponse>('/api/clients'),
 
   services: () => apiRequest<ServicesResponse>('/api/services'),
+
+  settings: () => apiRequest<Settings>('/api/settings'),
+
+  updateSettings: (body: SettingsBody) =>
+    apiRequest<Settings>('/api/settings', { method: 'PUT', json: body }),
 
   assignList: (body: AssignBody) =>
     apiRequest<AssignResponse>('/api/assignments', { method: 'PUT', json: body }),

@@ -56,6 +56,19 @@ AdGuard Home and Pi-hole are the mature choices. This section says where AlwaysD
 - **Blocked apps** are chosen in the client dialog from a searchable, grouped list (YouTube, Discord, TikTok and so on). The catalogue has 142 apps, taken from AdGuard's HostlistsRegistry. It is downloaded at start-up and on the daily refresh, cached on disk, and never bundled, because its repository is GPL-3.0. A blocked app blocks its domains for that client only. The query log shows the rule as `list:app/<id>:<domain>`, and the blocked-by-list panel counts each app separately.
 - Limits of app blocking: rules that are wildcards, start anchors or `$dnstype` are skipped (51 of 2,406 in the catalogue when checked), so an app block can miss some of its domains. DNS blocking is also not airtight, because apps with their own hardcoded DNS or IP addresses can bypass it. If the catalogue cannot be downloaded, the last loaded copy stays in use.
 
+### Settings
+
+An admin-only Settings page (`#/settings`) edits the config items that have no page of their own. Each section saves on its own and sends every other section unchanged, so one save cannot clear another.
+
+- **Local answers.** Names, or `*.suffix` wildcards, answered with a fixed IPv4 or IPv6 address instead of asking an upstream. An exact name wins over a wildcard. Names are stored lowercase, and one name can have one answer.
+- **Global allow domains.** Never blocked, for every device. They also cover subdomains and override every block list.
+- **Global block domains.** Always blocked, for every device, including subdomains.
+- **Resolver defaults.** The bootstrap IP addresses, and the default upstream group for devices that match no client. Bootstrap cannot be emptied while a resolver is given by hostname.
+- **History retention.** Days of query log and of per-minute statistics. Both must be at least 1, because zero would delete all history. Lowering them deletes older rows at the next hourly pass.
+- **Listeners** (DNS and web ports) are shown read-only. Changing a port needs a restart and can lock you out of the dashboard, so edit `listen` in `config.yaml` instead.
+
+Resolvers and groups are on the Upstreams page, clients on the Clients page, and lists on the Lists page, so every setting in the config file has an editor.
+
 ### Block and allow lists
 
 - A list source is an http(s) URL or an absolute file path on the server.
@@ -128,6 +141,7 @@ The UI/UX overhaul from the design review is complete in the code on the main br
 4. Dashboard redesign: the total queries and block rate orbs, full-size resolver cards, the merged Blocked panel, and a collapsed Traffic insight section.
 5. Styling polish and shared design tokens: colour tokens and a trimmed type scale.
 6. Per-client parental controls: a Block adult content switch and a blocked-apps picker in the client dialog, backed by the AdGuard services catalogue. Forced safe search is the planned next phase and is not built.
+7. Settings page: local answers, global allow and block domains, resolver defaults and retention are editable in the UI. Only the listener ports stay in `config.yaml`.
 
 ### Still open
 

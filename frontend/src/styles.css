@@ -704,6 +704,20 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
   border-radius: 8px;
 }
 .apps-group { display: flex; flex-direction: column; gap: 6px; }
+
+/* Settings page */
+.settings-form { display: flex; flex-direction: column; gap: 12px; }
+.rewrite-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; }
+.settings-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.listen-list { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.listen-list dt { color: var(--muted); }
+.listen-list dd { margin: 0; }
+@media (max-width: 900px) {
+  .settings-pair { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .rewrite-row { grid-template-columns: 1fr; }
+}
 .chip {
   font: inherit;
   font-size: 0.8rem;

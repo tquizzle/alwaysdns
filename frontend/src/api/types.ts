@@ -249,6 +249,32 @@ export interface ClientUpdateBody {
   blocked_services: string[];
 }
 
+/** A local answer: a name, or `*.suffix`, that is answered with this address instead of asking an upstream. */
+export interface Rewrite {
+  domain: string;
+  answer: string;
+}
+
+export interface Retention {
+  query_days: number;
+  stats_days: number;
+}
+
+/** Admin only: what the Settings page shows. `listen` and `groups` are read-only context. */
+export interface Settings {
+  rewrites: Rewrite[];
+  allow_domains: string[];
+  block_domains: string[];
+  bootstrap: string[];
+  default_upstream_group: string;
+  retention: Retention;
+  listen: { dns: string; http: string };
+  groups: string[];
+}
+
+/** What a save sends: every editable setting, so a missing field cannot clear one. */
+export type SettingsBody = Omit<Settings, 'listen' | 'groups'>;
+
 /** An app a client can block, from the catalogue. `domains` is how many domains it covers. */
 export interface ServiceItem {
   id: string;

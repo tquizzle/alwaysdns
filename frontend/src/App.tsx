@@ -13,6 +13,7 @@ import { QueryLogPage } from './pages/QueryLogPage';
 import { ClientsPage } from './pages/ClientsPage';
 import { ListsPage } from './pages/ListsPage';
 import { UpstreamsPage } from './pages/UpstreamsPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 const NAV: { route: Route; label: string; adminOnly?: boolean }[] = [
   { route: 'dashboard', label: 'Dashboard' },
@@ -20,6 +21,7 @@ const NAV: { route: Route; label: string; adminOnly?: boolean }[] = [
   { route: 'lists', label: 'Lists' },
   { route: 'upstreams', label: 'Upstreams', adminOnly: true },
   { route: 'clients', label: 'Clients' },
+  { route: 'settings', label: 'Settings', adminOnly: true },
 ];
 
 export function App() {
@@ -51,8 +53,9 @@ export function App() {
 function Shell({ username, role }: { username: string; role: string }) {
   const [requested, navigate] = useHashRoute();
   const isAdmin = role === 'admin';
-  // Viewers have no Upstreams page. A pasted #/upstreams link falls back to the dashboard.
-  const route: Route = requested === 'upstreams' && !isAdmin ? 'dashboard' : requested;
+  // Viewers have no Upstreams or Settings page. A pasted link to one falls back to the dashboard.
+  const adminOnly = NAV.some((item) => item.route === requested && item.adminOnly);
+  const route: Route = adminOnly && !isAdmin ? 'dashboard' : requested;
 
   // The tab title names the page, so several open tabs can be told apart.
   useEffect(() => {
@@ -99,6 +102,7 @@ function Shell({ username, role }: { username: string; role: string }) {
           {route === 'lists' && <ListsPage isAdmin={isAdmin} />}
           {route === 'upstreams' && <UpstreamsPage />}
           {route === 'clients' && <ClientsPage />}
+          {route === 'settings' && <SettingsPage />}
         </ErrorBoundary>
       </main>
 
