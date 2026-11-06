@@ -54,6 +54,7 @@ async fn main() -> Result<()> {
         None | Some("serve") => serve().await,
         Some("hash-password") => hash_password_cmd(),
         Some("import-adguard") => import_cmd(&args[2..]),
+        Some("vacuum") => vacuum_cmd(),
         Some("-h") | Some("--help") | Some("help") => {
             print_usage();
             Ok(())
@@ -67,8 +68,22 @@ async fn main() -> Result<()> {
 
 fn print_usage() {
     eprintln!(
-        "usage:\n  dnsui serve\n  dnsui hash-password   (password on stdin)\n  dnsui import-adguard <AdGuardHome.yaml> <out-config.yaml>"
+        "usage:\n  dnsui serve\n  dnsui hash-password   (password on stdin)\n  dnsui import-adguard <AdGuardHome.yaml> <out-config.yaml>\n  dnsui vacuum          (shrink dnsui.db; stop the server first)"
     );
+}
+
+/// One-off `VACUUM` of `dnsui.db` in `DNSUI_DATA_DIR`. Retention deletes rows but
+/// SQLite keeps the freed pages for reuse, so the file never shrinks by itself.
+fn vacuum_cmd() -> Result<()> {
+    let data_dir = PathBuf::from(env_or("DNSUI_DATA_DIR", "data"));
+    let path = data_dir.join("dnsui.db");
+    if !path.exists() {
+        bail!("{} does not exist", path.display());
+    }
+    let (before, after) = db::vacuum(&path)?;
+    let mb = |bytes: u64| bytes as f64 / 1_048_576.0;
+    println!("{}: {:.1} MiB -> {:.1} MiB", path.display(), mb(before), mb(after));
+    Ok(())
 }
 
 /// Shown once, on the first start, when the admin password was generated.

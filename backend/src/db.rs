@@ -677,9 +677,60 @@ pub fn apply_retention(
     Ok((queries, minutes))
 }
 
+/// Rewrites the database file to give free pages back to the disk. Returns
+/// `(bytes_before, bytes_after)` of the main file, measured after a WAL checkpoint.
+/// Needs free disk space about the size of the database, and the write lock for
+/// the duration, so run it with the server stopped.
+pub fn vacuum(path: &Path) -> Result<(u64, u64)> {
+    let conn = connect(path)?;
+    let size = || -> Result<u64> {
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .context("checkpointing the WAL")?;
+        Ok(std::fs::metadata(path)
+            .with_context(|| format!("reading {}", path.display()))?
+            .len())
+    };
+    let before = size()?;
+    conn.execute_batch("VACUUM").context("running VACUUM")?;
+    let after = size()?;
+    Ok((before, after))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vacuum_returns_deleted_space_to_the_disk() {
+        let path = std::env::temp_dir().join(format!("dnsui-vacuum-{}.db", std::process::id()));
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+        {
+            let mut conn = connect(&path).unwrap();
+            migrate(&mut conn, MIGRATIONS).unwrap();
+            let tx = conn.transaction().unwrap();
+            for i in 0..20_000 {
+                tx.execute(
+                    "INSERT INTO queries (time, client_ip, client_name, domain, qtype, result, upstream, elapsed_ms)
+                     VALUES (?1, '10.0.0.1', 'pc', ?2, 'A', 'forwarded', 'u', 1.0)",
+                    params![i, format!("host{i}.example.com")],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+            conn.execute("DELETE FROM queries WHERE time >= 100", []).unwrap();
+        }
+        let (before, after) = vacuum(&path).unwrap();
+        assert!(after < before / 4, "expected a large shrink, got {before} -> {after}");
+        let conn = connect(&path).unwrap();
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM queries", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 100, "VACUUM must not lose the rows that remain");
+        drop(conn);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
 
     fn mem() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();

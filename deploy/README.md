@@ -194,6 +194,22 @@ docker compose up -d --build
 
 The `dnsui-data` volume keeps its contents across rebuilds.
 
+### Shrinking the database (optional)
+
+Retention deletes old query rows, but SQLite keeps the freed space for reuse. The file grows to
+the size of one retention window and then stays there, so you normally never need this. Run it
+after you lower the retention windows, or after an unusual burst of queries, to give the disk
+space back:
+
+```sh
+docker compose stop dnsui
+docker compose run --rm dnsui vacuum
+docker compose up -d
+```
+
+DNS is down while the service is stopped. The command prints the size before and after. It needs
+free disk space about the size of the database while it runs.
+
 ## 9. Rollback
 
 To return DNS service to AdGuard Home:
