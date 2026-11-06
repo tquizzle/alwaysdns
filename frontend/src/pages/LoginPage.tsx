@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../api/client';
 import { useLogin } from '../api/queries';
 
@@ -68,12 +68,47 @@ export function LoginPage() {
   );
 }
 
-/** A ring with a gap in the upper right and the resolver at its centre: the outage is the gap. */
+/** Tick marks around the orb, longer every third one, like the dashboard gauge. */
+const TICKS = Array.from({ length: 12 }, (_, i) => {
+  const angle = (i / 12) * 2 * Math.PI;
+  const inner = i % 3 === 0 ? 12.6 : 13.6;
+  return {
+    i,
+    x1: 16 + Math.cos(angle) * inner,
+    y1: 16 + Math.sin(angle) * inner,
+    x2: 16 + Math.cos(angle) * 15,
+    y2: 16 + Math.sin(angle) * 15,
+    long: i % 3 === 0,
+  };
+});
+
+/** A small orb: a glowing ring with a gap, and a red dot in the gap. The red dot is the outage. */
 export function BrandMark() {
+  const glowId = useId().replace(/:/g, '');
   return (
     <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="55 20" />
-      <circle cx="16" cy="16" r="3.5" fill="currentColor" />
+      <defs>
+        <radialGradient id={glowId}>
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.3" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="16" cy="16" r="15.5" fill={`url(#${glowId})`} />
+      {TICKS.map((t) => (
+        <line
+          key={t.i}
+          x1={t.x1.toFixed(2)}
+          y1={t.y1.toFixed(2)}
+          x2={t.x2.toFixed(2)}
+          y2={t.y2.toFixed(2)}
+          stroke="currentColor"
+          strokeOpacity={t.long ? 0.85 : 0.4}
+          strokeWidth="0.9"
+        />
+      ))}
+      <circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeDasharray="41 15.5" />
+      <circle cx="16" cy="16" r="2.6" fill="currentColor" />
+      <circle cx="21.8" cy="9.2" r="2.2" style={{ fill: 'var(--red)' }} />
     </svg>
   );
 }
