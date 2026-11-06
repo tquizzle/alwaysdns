@@ -3,6 +3,7 @@ import { useCreateClient, useCreateList, useUpdateClient } from '../api/queries'
 import type { Client, ClientUpdateBody } from '../api/types';
 import { cidrError, linesToList } from '../lib/clients';
 import { ADULT_LIST } from '../lib/lists';
+import { AppPicker } from './AppPicker';
 import { Modal } from './Modal';
 import { Notice } from './States';
 
@@ -31,9 +32,14 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
   const [lists, setLists] = useState<string[]>(client?.block_lists ?? []);
   const [allow, setAllow] = useState((client?.allow_domains ?? []).join('\n'));
   const [block, setBlock] = useState((client?.block_domains ?? []).join('\n'));
+  const [apps, setApps] = useState<string[]>(client?.blocked_services ?? []);
   const [error, setError] = useState<string | null>(null);
 
-  const groups = groupNames.includes(group) ? groupNames : [group, ...groupNames];
+  const toggleApp = (id: string) => {
+    setApps((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
+  };
+
+  const groups =groupNames.includes(group) ? groupNames : [group, ...groupNames];
 
   const toggleList = (list: string) => {
     setLists((prev) => (prev.includes(list) ? prev.filter((l) => l !== list) : [...prev, list]));
@@ -73,6 +79,7 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
       block_lists: lists,
       allow_domains: linesToList(allow),
       block_domains: linesToList(block),
+      blocked_services: apps,
     };
 
     if (client) {
@@ -164,6 +171,8 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
             </div>
           )}
         </div>
+
+        <AppPicker selected={apps} onToggle={toggleApp} />
 
         <div className="form-grid">
           <label className="field">

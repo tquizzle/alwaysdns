@@ -33,6 +33,7 @@ export const queryKeys = {
   history: (params: HistoryParams | null) => ['history', params] as const,
   lists: ['lists'] as const,
   clients: ['clients'] as const,
+  services: ['services'] as const,
   health: ['health'] as const,
 };
 
@@ -176,6 +177,15 @@ export function useClients() {
     queryKey: queryKeys.clients,
     queryFn: api.clients,
     refetchInterval: POLL_CLIENTS_MS,
+  });
+}
+
+/** The apps a client can block. The catalogue changes rarely, so it is kept for a minute. */
+export function useServices() {
+  return useQuery({
+    queryKey: queryKeys.services,
+    queryFn: api.services,
+    staleTime: 60_000,
   });
 }
 

@@ -691,6 +691,17 @@ tbody tr:hover { background: rgba(var(--edge-rgb), 0.06); }
 
 /* Chips: the assigned / active state for list and client assignments */
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.apps-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+}
+.apps-group { display: flex; flex-direction: column; gap: 6px; }
 .chip {
   font: inherit;
   font-size: 0.8rem;

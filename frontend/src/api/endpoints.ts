@@ -24,6 +24,7 @@ import type {
   RangeKey,
   RefreshListsResponse,
   ResolverBody,
+  ServicesResponse,
   Stats,
 } from './types';
 
@@ -65,6 +66,8 @@ export const api = {
   refreshLists: () => apiRequest<RefreshListsResponse>('/api/lists/refresh', { method: 'POST' }),
 
   clients: () => apiRequest<ClientsResponse>('/api/clients'),
+
+  services: () => apiRequest<ServicesResponse>('/api/services'),
 
   assignList: (body: AssignBody) =>
     apiRequest<AssignResponse>('/api/assignments', { method: 'PUT', json: body }),

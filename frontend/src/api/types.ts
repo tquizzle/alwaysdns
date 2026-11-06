@@ -206,6 +206,8 @@ export interface Client {
   upstream_group: string;
   /** Block lists this client uses. */
   block_lists: string[];
+  /** Apps blocked for this client, by catalogue id. */
+  blocked_services: string[];
   queries: number;
   blocked: number;
 }
@@ -244,6 +246,21 @@ export interface ClientUpdateBody {
   block_lists: string[];
   allow_domains: string[];
   block_domains: string[];
+  blocked_services: string[];
+}
+
+/** An app a client can block, from the catalogue. `domains` is how many domains it covers. */
+export interface ServiceItem {
+  id: string;
+  name: string;
+  group: string;
+  domains: number;
+}
+
+export interface ServicesResponse {
+  services: ServiceItem[];
+  /** Set when the cached catalogue is in use because the download failed. */
+  note: string | null;
 }
 
 export interface GroupCreateBody {

@@ -18,6 +18,7 @@ export function clientBody(client: Client): ClientUpdateBody {
     block_lists: client.block_lists,
     allow_domains: client.allow_domains ?? [],
     block_domains: client.block_domains ?? [],
+    blocked_services: client.blocked_services,
   };
 }
 
