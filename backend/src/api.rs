@@ -6,6 +6,7 @@
 //! URLs or raw errors.
 
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::rejection::JsonRejection;
@@ -22,7 +23,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::app::{AppState, NewList, StatsSource};
 use crate::auth::{Role, SESSION_COOKIE, token_from_cookie_header};
-use crate::config::{ClientConfig, Config, ListFormat, check_resolver_name, protocol_of};
+use crate::config::{ClientConfig, Config, ListFormat, RewriteConfig, Retention, check_resolver_name, protocol_of};
 use crate::db::{self, ListPatch, ListRecord, QueryFilter, QueryRecord};
 use crate::insights;
 use crate::models::{HistoryResponse, QueryItem, QueryLogResponse, StatsResponse, TimelinePoint, TopEntry};
@@ -63,6 +64,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/upstream-groups/{name}", put(update_group).delete(delete_group))
         .route("/api/resolvers", post(create_resolver))
         .route("/api/resolvers/{name}", put(update_resolver).delete(delete_resolver))
+        .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/config", get(get_config).put(put_config))
         .route("/api/reload", post(reload))
         .route("/api/{*rest}", any(api_not_found))
@@ -1726,6 +1728,172 @@ async fn block_domain(
         .await
         .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
     Ok(Json(json!({ "ok": true, "domain": domain, "scope": scope })))
+}
+
+/// What the Settings page edits. Every save sends all of it, so a field left out cannot
+/// clear a setting by accident. Listeners are not here: changing a port needs a restart
+/// and can lock you out of the dashboard, so they stay in `config.yaml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SettingsBody {
+    rewrites: Vec<RewriteConfig>,
+    allow_domains: Vec<String>,
+    block_domains: Vec<String>,
+    bootstrap: Vec<String>,
+    default_upstream_group: String,
+    retention: Retention,
+}
+
+/// Trims, normalizes and de-duplicates a domain list, rejecting anything that is not a hostname.
+fn clean_domains(raw: Vec<String>, what: &str) -> Result<Vec<String>, ApiError> {
+    let mut out: Vec<String> = Vec::new();
+    for item in clean_list(raw) {
+        let domain = normalize_rule_domain(&item);
+        if !is_valid_domain(&domain) {
+            return Err(ApiError::bad_request(format!("'{item}' in {what} is not a valid domain")));
+        }
+        push_unique(&mut out, &domain);
+    }
+    Ok(out)
+}
+
+/// Applies a settings save to a copy of the config and validates the result.
+fn settings_config(body: SettingsBody, mut config: Config) -> Result<Config, ApiError> {
+    let mut rewrites: Vec<RewriteConfig> = Vec::new();
+    for rewrite in body.rewrites {
+        let domain = rewrite.domain.trim().to_lowercase();
+        if rewrites.iter().any(|r| r.domain == domain) {
+            return Err(ApiError::bad_request(format!("'{domain}' has more than one local answer")));
+        }
+        rewrites.push(RewriteConfig { domain, answer: rewrite.answer.trim().to_string() });
+    }
+
+    let mut bootstrap: Vec<IpAddr> = Vec::new();
+    for raw in clean_list(body.bootstrap) {
+        let ip: IpAddr = raw
+            .parse()
+            .map_err(|_| ApiError::bad_request(format!("'{raw}' is not an IP address")))?;
+        if !bootstrap.contains(&ip) {
+            bootstrap.push(ip);
+        }
+    }
+
+    config.rewrites = rewrites;
+    config.allow_domains = clean_domains(body.allow_domains, "the allow list")?;
+    config.block_domains = clean_domains(body.block_domains, "the block list")?;
+    config.bootstrap = bootstrap;
+    config.default_upstream_group = body.default_upstream_group.trim().to_string();
+    config.retention = body.retention;
+    config
+        .validate()
+        .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    Ok(config)
+}
+
+fn settings_json(config: &Config) -> Value {
+    json!({
+        "rewrites": config.rewrites,
+        "allow_domains": config.allow_domains,
+        "block_domains": config.block_domains,
+        "bootstrap": config.bootstrap,
+        "default_upstream_group": config.default_upstream_group,
+        "retention": config.retention,
+        "listen": config.listen,
+        "groups": config.upstream_groups.keys().collect::<Vec<_>>(),
+    })
+}
+
+/// `GET /api/settings`: the settings the Settings page edits, plus the read-only listeners.
+async fn get_settings(session: Session, State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+    session.require_admin()?;
+    Ok(Json(settings_json(&state.runtime().config)))
+}
+
+/// `PUT /api/settings`: replaces local answers, global allow and block domains, bootstrap
+/// resolvers, the default upstream group and retention.
+async fn put_settings(
+    session: Session,
+    State(state): State<Arc<AppState>>,
+    body: Result<Json<SettingsBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    session.require_admin()?;
+    let Json(body) = body.map_err(|e| ApiError::bad_request(e.body_text()))?;
+    let config = settings_config(body, state.runtime().config.clone())?;
+    let view = settings_json(&config);
+    state
+        .save_rules(config)
+        .await
+        .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    Ok(Json(view))
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    fn base() -> Config {
+        Config::parse_yaml(
+            "bootstrap: [\"9.9.9.10\"]\nresolvers:\n  Quad9: \"https://dns10.quad9.net/dns-query\"\nupstream_groups:\n  default: [Quad9]\n  kids: [Quad9]\n",
+        )
+        .unwrap()
+    }
+
+    fn body() -> SettingsBody {
+        SettingsBody {
+            rewrites: vec![RewriteConfig { domain: " NAS.Example.Test ".into(), answer: " 192.0.2.5 ".into() }],
+            allow_domains: vec!["Ok.Example.Org".into(), "ok.example.org".into(), "  ".into()],
+            block_domains: vec!["*.Bad.Example".into()],
+            bootstrap: vec!["9.9.9.10".into(), "9.9.9.10".into(), "2620:fe::10".into()],
+            default_upstream_group: "kids".into(),
+            retention: Retention { query_days: 14, stats_days: 90 },
+        }
+    }
+
+    #[test]
+    fn a_save_is_cleaned_and_applied() {
+        let config = settings_config(body(), base()).unwrap();
+        assert_eq!(config.rewrites[0].domain, "nas.example.test");
+        assert_eq!(config.rewrites[0].answer, "192.0.2.5");
+        assert_eq!(config.allow_domains, vec!["ok.example.org"]);
+        assert_eq!(config.block_domains, vec!["bad.example"], "a wildcard prefix is stored as the suffix");
+        assert_eq!(config.bootstrap.len(), 2, "the repeated address is dropped");
+        assert_eq!(config.default_upstream_group, "kids");
+        assert_eq!(config.retention.query_days, 14);
+    }
+
+    #[test]
+    fn bad_input_is_rejected_with_a_reason() {
+        let mut b = body();
+        b.bootstrap = vec!["not-an-ip".into()];
+        assert!(settings_config(b, base()).is_err());
+
+        let mut b = body();
+        b.rewrites[0].answer = "999.1.1.1".into();
+        assert!(settings_config(b, base()).is_err());
+
+        let mut b = body();
+        b.rewrites.push(RewriteConfig { domain: "nas.example.test".into(), answer: "192.0.2.6".into() });
+        assert!(settings_config(b, base()).is_err(), "one answer per name");
+
+        let mut b = body();
+        b.retention.query_days = 0;
+        assert!(settings_config(b, base()).is_err(), "zero days would delete all history");
+
+        let mut b = body();
+        b.default_upstream_group = "missing".into();
+        assert!(settings_config(b, base()).is_err());
+
+        let mut b = body();
+        b.block_domains = vec!["bad domain!".into()];
+        assert!(settings_config(b, base()).is_err());
+    }
+
+    #[test]
+    fn bootstrap_can_be_emptied_only_when_no_resolver_needs_it() {
+        let mut b = body();
+        b.bootstrap = vec![];
+        assert!(settings_config(b, base()).is_err(), "Quad9 is given by hostname, so it needs bootstrap");
+    }
 }
 
 #[cfg(test)]
