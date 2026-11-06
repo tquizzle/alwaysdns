@@ -11,7 +11,10 @@ export function Footer() {
         <span role="img" aria-label="love">
           ❤️
         </span>{' '}
-        by TQ
+        by{' '}
+        <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer">
+          TQ
+        </a>
       </p>
       <nav aria-label="Project links">
         <a href={SITE_URL} target="_blank" rel="noopener noreferrer">
@@ -19,9 +22,6 @@ export function Footer() {
         </a>
         <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
           Source on GitHub
-        </a>
-        <a href={AUTHOR_URL} target="_blank" rel="noopener noreferrer">
-          @tquizzle
         </a>
       </nav>
     </footer>
