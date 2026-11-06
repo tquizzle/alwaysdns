@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../api/client';
 import { useLogin } from '../api/queries';
 import { Footer } from '../components/Footer';
+import { SITE_URL } from '../lib/links';
 
 export function LoginPage() {
   const login = useLogin();
@@ -25,10 +26,10 @@ export function LoginPage() {
   return (
     <main className="login-screen">
       <form className="panel login-card" onSubmit={onSubmit} noValidate>
-        <div className="brand brand-lg">
+        <a className="brand brand-lg" href={SITE_URL} target="_blank" rel="noopener noreferrer" aria-label="AlwaysDNS website">
           <BrandMark />
           <Wordmark />
-        </div>
+        </a>
         <p className="muted">Sign in to view queries, clients and settings.</p>
 
         <label className="field">

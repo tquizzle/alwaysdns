@@ -57,3 +57,7 @@ A 401 from any protected endpoint returns the user to the login page.
 - **Top bar**: health status and version, and an account menu with a colour palette picker, a Mask IPs toggle that hides
   the last two octets of client addresses on screen, and Sign out. Both settings are saved in the browser. On phones the
   tables turn into stacked cards.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the checks to run and how to send a change.

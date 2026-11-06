@@ -3,6 +3,7 @@ import { useMe, useHealth } from './api/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorState, LoadingState } from './components/States';
 import { Footer } from './components/Footer';
+import { SITE_URL } from './lib/links';
 import { UserMenu } from './components/UserMenu';
 import { useHashRoute, type Route } from './lib/hashRoute';
 import { NavIcon } from './components/NavIcon';
@@ -62,10 +63,10 @@ function Shell({ username, role }: { username: string; role: string }) {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
+        <a className="brand" href={SITE_URL} target="_blank" rel="noopener noreferrer" aria-label="AlwaysDNS website">
           <BrandMark />
           <Wordmark />
-        </div>
+        </a>
 
         <nav className="nav" aria-label="Main">
           {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => (

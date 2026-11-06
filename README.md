@@ -2,6 +2,10 @@
 
 A self-hosted filtering DNS resolver with a web dashboard, built for a homelab. The backend is Rust (axum, tokio, SQLite) and the frontend is React 19. It runs in Docker Compose from `deploy/`. See [PRD.md](PRD.md) for the full spec and [deploy/README.md](deploy/README.md) for setup.
 
+## Contributing
+
+Contributions are welcome: bug reports, ideas, docs fixes and code. Read [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up, run the checks and send a change.
+
 ## Why Rust
 
 - **Memory safety in safe code.** The compiler rejects use-after-free and buffer overflows in safe Rust. Most high-severity bugs in large C/C++ codebases are memory-safety bugs (Microsoft and Google reports). This backend has no `unsafe` blocks, but bundled SQLite is C code.
