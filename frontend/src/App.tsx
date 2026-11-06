@@ -54,7 +54,7 @@ function Shell({ username, role }: { username: string; role: string }) {
   // The tab title names the page, so several open tabs can be told apart.
   useEffect(() => {
     const label = NAV.find((item) => item.route === route)?.label ?? 'Dashboard';
-    document.title = `${label} · DNS Control`;
+    document.title = `${label} · AlwaysDNS`;
   }, [route]);
 
   return (
@@ -62,7 +62,7 @@ function Shell({ username, role }: { username: string; role: string }) {
       <header className="topbar">
         <div className="brand">
           <BrandMark />
-          <span>DNS Control</span>
+          <span>AlwaysDNS</span>
         </div>
 
         <nav className="nav" aria-label="Main">

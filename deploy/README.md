@@ -95,7 +95,7 @@ resolver names in failover order. A config from an older version, where the
 groups list raw URLs, is converted on the first start: each URL becomes a
 resolver named after its hostname, the groups are rewritten to use those names,
 and the old file is kept next to it as `config.yaml.bak`. Rename the resolvers
-afterwards in the Resolvers panel on the Clients page.
+afterwards on the Upstreams page.
 
 The file lives in this deploy directory and the whole directory is mounted into
 the container at `/app/config`. The server saves changes made in the dashboard
@@ -233,8 +233,8 @@ Upstreams can be `quic://` (DNS-over-QUIC, UDP 853) or `https://` (DNS-over-HTTP
 
 **Before cutover, check outbound UDP 853 from the Docker host:** a blocked UDP 853 shows as query timeouts on quic upstreams.
 
-If it is blocked, change those resolvers to DoH, in the Resolvers panel on the
-Clients page or under `resolvers:` in `config.yaml`. For example:
+If it is blocked, change those resolvers to DoH, on the Upstreams page
+or under `resolvers:` in `config.yaml`. For example:
 
 - `quic://def456.dns.nextdns.io` becomes `https://def456.dns.nextdns.io/dns-query`
 

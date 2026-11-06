@@ -1,4 +1,4 @@
-# DNS Control frontend
+# AlwaysDNS frontend
 
 Web UI for the homelab DNS server: dashboard, query log, lists, upstreams, clients and login.
 

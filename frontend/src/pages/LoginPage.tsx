@@ -26,7 +26,7 @@ export function LoginPage() {
       <form className="panel login-card" onSubmit={onSubmit} noValidate>
         <div className="brand brand-lg">
           <BrandMark />
-          <span>DNS Control</span>
+          <span>AlwaysDNS</span>
         </div>
         <p className="muted">Sign in to view queries, clients and settings.</p>
 
