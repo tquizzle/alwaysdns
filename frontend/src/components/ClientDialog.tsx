@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { useCreateClient, useUpdateClient } from '../api/queries';
+import { useCreateClient, useCreateList, useUpdateClient } from '../api/queries';
 import type { Client, ClientUpdateBody } from '../api/types';
 import { cidrError, linesToList } from '../lib/clients';
+import { ADULT_LIST } from '../lib/lists';
 import { Modal } from './Modal';
 import { Notice } from './States';
 
@@ -21,7 +22,8 @@ const NAME_MAX = 64;
 export function ClientDialog({ client, groupNames, defaultGroup, blockListNames, onClose, onSaved }: Props) {
   const create = useCreateClient();
   const update = useUpdateClient();
-  const busy = create.isPending || update.isPending;
+  const createList = useCreateList();
+  const busy = create.isPending || update.isPending || createList.isPending;
 
   const [name, setName] = useState(client?.name ?? '');
   const [cidrs, setCidrs] = useState((client?.cidrs ?? []).join('\n'));
@@ -37,7 +39,12 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
     setLists((prev) => (prev.includes(list) ? prev.filter((l) => l !== list) : [...prev, list]));
   };
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  // The adult list has its own switch, so it is left out of the chips.
+  const adultExists = blockListNames.includes(ADULT_LIST.name);
+  const adultOn = lists.includes(ADULT_LIST.name);
+  const otherLists = blockListNames.filter((n) => n !== ADULT_LIST.name);
+
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmedName = name.trim();
     if (!client) {
@@ -50,6 +57,15 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
       if (problem) return setError(problem);
     }
     setError(null);
+
+    // First use of the switch: add the list, then assign it with the rest of the client.
+    if (adultOn && !adultExists) {
+      try {
+        await createList.mutateAsync({ kind: 'block', name: ADULT_LIST.name, url: ADULT_LIST.url, enabled: true });
+      } catch (err) {
+        return setError(err instanceof Error ? err.message : 'Could not add the adult-content list.');
+      }
+    }
 
     const body: ClientUpdateBody = {
       cidrs: networks,
@@ -117,12 +133,24 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
         </div>
 
         <div className="field">
+          <label className="checkbox">
+            <input type="checkbox" checked={adultOn} onChange={() => toggleList(ADULT_LIST.name)} />
+            <span>Block adult content</span>
+          </label>
+          <span className="muted small">
+            {adultExists
+              ? 'Uses the "adult-content" list.'
+              : 'Adds the StevenBlack adult-content list (about 77,000 domains) when you save.'}
+          </span>
+        </div>
+
+        <div className="field">
           <span>Block lists</span>
-          {blockListNames.length === 0 ? (
-            <span className="muted small">No block lists yet. Add one on the Lists page.</span>
+          {otherLists.length === 0 ? (
+            <span className="muted small">No other block lists yet. Add one on the Lists page.</span>
           ) : (
             <div className="chip-row" role="group" aria-label="Block lists for this client">
-              {blockListNames.map((name) => (
+              {otherLists.map((name) => (
                 <button
                   key={name}
                   type="button"

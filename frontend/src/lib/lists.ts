@@ -9,6 +9,15 @@ export const LIST_KIND_LABEL: Record<ListKind, string> = {
 export const MAX_LIST_URL_LENGTH = 2048;
 
 /**
+ * The list behind the "Block adult content" switch in the client dialog.
+ * StevenBlack/hosts, porn-only extension: MIT licence, hosts format, about 77,000 domains.
+ */
+export const ADULT_LIST = {
+  name: 'adult-content',
+  url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts',
+} as const;
+
+/**
  * Returns a message for an unusable list source, or null when it can be saved.
  * A source is an http(s) URL or an absolute file path on the server, the same
  * two forms the backend accepts.

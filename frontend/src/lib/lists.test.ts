@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { redactListUrl, validateListName, validateListSource } from './lists';
+import { ADULT_LIST, redactListUrl, validateListName, validateListSource } from './lists';
+
+describe('ADULT_LIST', () => {
+  it('is a list the dialog can create, because it is sent through the same URL check', () => {
+    expect(validateListName(ADULT_LIST.name)).toBeNull();
+    expect(validateListSource(ADULT_LIST.url)).toBeNull();
+  });
+});
 
 describe('validateListSource', () => {
   it('accepts http and https URLs with a host', () => {
