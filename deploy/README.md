@@ -178,10 +178,10 @@ ssh <user>@203.0.113.116 'sudo caddy validate --config /etc/caddy/Caddyfile \
 
 Then open `https://dns.example.test` from a LAN client.
 
-## 7. Cloudflare note
+## 7. VPN and zero-trust DNS settings
 
-No WARP change is needed. The dashboard is reached as `dns.example.test` through Caddy
-on 203.0.113.116, so the WARP or Gateway DNS settings do not need to point at
+No change is needed in a VPN or zero-trust client's DNS settings. The dashboard is reached as
+`dns.example.test` through Caddy on 203.0.113.116, so those settings do not need to point at
 dnsui.
 
 ## 8. Updating

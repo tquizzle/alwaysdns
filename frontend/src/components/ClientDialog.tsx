@@ -133,7 +133,7 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
               rows={3}
               value={cidrs}
               spellCheck={false}
-              placeholder={'192.168.1.10/32\n198.51.100.0/24'}
+              placeholder={'192.168.1.10/32\n192.168.2.0/24'}
               onChange={(e) => setCidrs(e.target.value)}
             />
           </label>

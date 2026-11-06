@@ -3,6 +3,11 @@
 **/target
 **/.git
 
+# Local tooling, screenshots and licensed data that never belong in the image.
+.claude
+screenshots
+**/*.mmdb
+
 # Local secrets. The real env file must never enter the build context.
 deploy/dnsui.env
 deploy/config.yaml
