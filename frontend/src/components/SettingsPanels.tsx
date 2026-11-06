@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
+import { api } from '../api/endpoints';
 import { useUpdateSettings } from '../api/queries';
 import type { Rewrite, Settings, SettingsBody } from '../api/types';
 import { linesToList } from '../lib/clients';
-import { nonBlankRows, parseDays, rewriteError, settingsBody } from '../lib/settings';
+import { exportFilename, nonBlankRows, parseDays, rewriteError, settingsBody } from '../lib/settings';
 import { Panel } from './Panel';
 import { Notice } from './States';
 
@@ -225,6 +226,54 @@ export function RetentionPanel({ settings }: { settings: Settings }) {
         </div>
         <SaveRow busy={busy} message={message} />
       </form>
+    </Panel>
+  );
+}
+
+/** Downloads every setting as one YAML file, to keep a copy or move to another install. */
+export function ExportPanel() {
+  const [message, setMessage] = useState<Message | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const onExport = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const yaml = await api.exportSettings();
+      const filename = exportFilename(new Date());
+      const url = URL.createObjectURL(new Blob([yaml], { type: 'text/yaml' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage({ tone: 'ok', text: `Downloaded ${filename}.` });
+    } catch (err) {
+      setMessage({ tone: 'error', text: err instanceof Error ? err.message : 'Could not export the settings.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel
+      title="Export settings"
+      subtitle="Download resolvers, groups, clients, enabled lists, local answers, allow and block domains, bootstrap, the default group, retention and listeners as one YAML file."
+    >
+      <div className="settings-form">
+        <p className="muted small">
+          It does not include user accounts, passwords or query history. It does contain your resolver URLs (some include
+          a personal profile ID), client networks and local answers, so check it before you share it.
+        </p>
+        {message && <Notice tone={message.tone}>{message.text}</Notice>}
+        <div className="row-actions">
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={onExport}>
+            {busy ? 'Preparing...' : 'Export settings'}
+          </button>
+        </div>
+      </div>
     </Panel>
   );
 }

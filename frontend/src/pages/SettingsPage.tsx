@@ -1,6 +1,7 @@
 import { useSettings } from '../api/queries';
 import {
   DomainsPanel,
+  ExportPanel,
   ListenersPanel,
   LocalAnswersPanel,
   ResolvingPanel,
@@ -36,6 +37,7 @@ export function SettingsPage() {
           <ResolvingPanel settings={settings.data} />
           <RetentionPanel settings={settings.data} />
           <ListenersPanel settings={settings.data} />
+          <ExportPanel />
         </>
       )}
     </div>

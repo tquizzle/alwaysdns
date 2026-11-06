@@ -66,6 +66,7 @@ An admin-only Settings page (`#/settings`) edits the config items that have no p
 - **Resolver defaults.** The bootstrap IP addresses, and the default upstream group for devices that match no client. Bootstrap cannot be emptied while a resolver is given by hostname.
 - **History retention.** Days of query log and of per-minute statistics. Both must be at least 1, because zero would delete all history. Lowering them deletes older rows at the next hourly pass.
 - **Listeners** (DNS and web ports) are shown read-only. Changing a port needs a restart and can lock you out of the dashboard, so edit `listen` in `config.yaml` instead.
+- **Export settings** downloads every setting as one YAML file named `alwaysdns-settings-<date>.yaml`. Lists live in the database, so the export takes the enabled lists from there, and a disabled list is left out. It never includes user accounts, password hashes, sessions or query history. It does include resolver URLs (some contain a personal profile ID), client networks and local answers, so check it before sharing. The file is a valid config, so it can be copied to `config.yaml` on another install.
 
 Resolvers and groups are on the Upstreams page, clients on the Clients page, and lists on the Lists page, so every setting in the config file has an editor.
 

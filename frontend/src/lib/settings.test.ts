@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Settings } from '../api/types';
-import { looksLikeIp, nonBlankRows, parseDays, rewriteError, settingsBody } from './settings';
+import { exportFilename, looksLikeIp, nonBlankRows, parseDays, rewriteError, settingsBody } from './settings';
+
+describe('exportFilename', () => {
+  it('carries the date with zero padding, so files from different days sort and do not collide', () => {
+    expect(exportFilename(new Date(2026, 0, 5))).toBe('alwaysdns-settings-2026-01-05.yaml');
+    expect(exportFilename(new Date(2026, 10, 6))).toBe('alwaysdns-settings-2026-11-06.yaml');
+  });
+});
 
 const current: Settings = {
   rewrites: [{ domain: 'nas.example.test', answer: '192.0.2.5' }],

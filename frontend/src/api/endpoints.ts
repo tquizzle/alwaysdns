@@ -73,6 +73,9 @@ export const api = {
 
   settings: () => apiRequest<Settings>('/api/settings'),
 
+  /** The settings as YAML text. The server also sends it as a download. */
+  exportSettings: () => apiRequest<string>('/api/settings/export'),
+
   updateSettings: (body: SettingsBody) =>
     apiRequest<Settings>('/api/settings', { method: 'PUT', json: body }),
 

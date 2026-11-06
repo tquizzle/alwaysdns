@@ -56,7 +56,7 @@ A 401 from any protected endpoint returns the user to the login page.
   content switch and a searchable list of apps to block (YouTube, Discord and so on) from the AdGuard services catalogue.
 - **Settings** (admin only): local answers, global allow and block domains, bootstrap resolvers and the default upstream
   group, and history retention. Each section saves on its own. The listener ports are shown read-only, because changing
-  them needs a restart.
+  them needs a restart. An Export settings button downloads everything as a YAML file (no accounts or query history).
 - **Top bar**: health status and version, and an account menu with a colour palette picker, a Mask IPs toggle that hides
   the last two octets of client addresses on screen, and Sign out. Both settings are saved in the browser. On phones the
   tables turn into stacked cards.

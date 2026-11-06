@@ -23,7 +23,7 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::app::{AppState, NewList, StatsSource};
 use crate::auth::{Role, SESSION_COOKIE, token_from_cookie_header};
-use crate::config::{ClientConfig, Config, ListFormat, RewriteConfig, Retention, check_resolver_name, protocol_of};
+use crate::config::{ClientConfig, Config, ListConfig, ListFormat, RewriteConfig, Retention, check_resolver_name, protocol_of};
 use crate::db::{self, ListPatch, ListRecord, QueryFilter, QueryRecord};
 use crate::insights;
 use crate::models::{HistoryResponse, QueryItem, QueryLogResponse, StatsResponse, TimelinePoint, TopEntry};
@@ -65,6 +65,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/resolvers", post(create_resolver))
         .route("/api/resolvers/{name}", put(update_resolver).delete(delete_resolver))
         .route("/api/settings", get(get_settings).put(put_settings))
+        .route("/api/settings/export", get(export_settings))
         .route("/api/config", get(get_config).put(put_config))
         .route("/api/reload", post(reload))
         .route("/api/{*rest}", any(api_not_found))
@@ -1827,6 +1828,51 @@ async fn put_settings(
     Ok(Json(view))
 }
 
+/// The settings as one portable YAML file. Lists live in the database once it is on, so
+/// the file's own `lists` sections can be stale: the enabled database lists replace them.
+/// Accounts, password hashes, sessions and query history are never part of a config.
+fn export_yaml(config: &Config, rows: Option<Vec<ListRecord>>) -> anyhow::Result<String> {
+    let mut config = config.clone();
+    if let Some(rows) = rows {
+        let mut block: std::collections::BTreeMap<String, ListConfig> = Default::default();
+        let mut allow: std::collections::BTreeMap<String, ListConfig> = Default::default();
+        for row in rows.into_iter().filter(|r| r.enabled) {
+            let format = db::parse_format(&row.format).unwrap_or(ListFormat::Auto);
+            let target = if row.kind == "allow" { &mut allow } else { &mut block };
+            let entry = target
+                .entry(row.name)
+                .or_insert_with(|| ListConfig { sources: Vec::new(), format });
+            if entry.format != format {
+                entry.format = ListFormat::Auto;
+            }
+            entry.sources.push(row.url);
+        }
+        config.lists = block;
+        config.allow_lists = allow;
+    }
+    let header = "# AlwaysDNS settings export.\n\
+                  # Contains resolver URLs (some include a personal profile ID), client networks and\n\
+                  # local answers. Check it before you share it. Accounts and query history are not included.\n";
+    Ok(format!("{header}{}", config.to_yaml()?))
+}
+
+/// `GET /api/settings/export`: downloads the settings as `alwaysdns-settings.yaml`.
+async fn export_settings(session: Session, State(state): State<Arc<AppState>>) -> Result<Response, ApiError> {
+    session.require_admin()?;
+    let shared = Arc::clone(&state);
+    let rows = blocking(move || shared.list_rows()).await?;
+    let yaml = export_yaml(&state.runtime().config, rows).map_err(|e| ApiError::internal(format!("{e:#}")))?;
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/yaml; charset=utf-8"),
+            (header::CONTENT_DISPOSITION, "attachment; filename=\"alwaysdns-settings.yaml\""),
+        ],
+        yaml,
+    )
+        .into_response())
+}
+
 #[cfg(test)]
 mod settings_tests {
     use super::*;
@@ -1886,6 +1932,46 @@ mod settings_tests {
         let mut b = body();
         b.block_domains = vec!["bad domain!".into()];
         assert!(settings_config(b, base()).is_err());
+    }
+
+    fn row(kind: &str, name: &str, url: &str, enabled: bool, format: &str) -> ListRecord {
+        ListRecord {
+            id: 1,
+            kind: kind.into(),
+            name: name.into(),
+            url: url.into(),
+            enabled,
+            format: format.into(),
+            rules: 0,
+            last_updated: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn export_uses_the_database_lists_and_can_be_loaded_back() {
+        let rows = vec![
+            row("block", "ads", "https://lists.example.test/a.txt", true, "hosts"),
+            row("block", "ads", "https://lists.example.test/b.txt", true, "abp"),
+            row("block", "off", "https://lists.example.test/off.txt", false, "auto"),
+            row("allow", "trusted", "/etc/lists/trusted.txt", true, "plain"),
+        ];
+        let yaml = export_yaml(&base(), Some(rows)).unwrap();
+        assert!(yaml.starts_with("# AlwaysDNS settings export."));
+
+        let loaded = Config::parse_yaml(&yaml).expect("an export is a valid config");
+        assert_eq!(loaded.lists["ads"].sources.len(), 2, "rows with one name merge into one list");
+        assert_eq!(loaded.lists["ads"].format, ListFormat::Auto, "mixed formats fall back to auto");
+        assert!(!loaded.lists.contains_key("off"), "a disabled list is not exported");
+        assert_eq!(loaded.allow_lists["trusted"].sources, vec!["/etc/lists/trusted.txt"]);
+    }
+
+    #[test]
+    fn export_keeps_the_config_lists_when_there_is_no_database() {
+        let mut config = base();
+        config.lists.insert("ads".into(), ListConfig { sources: vec!["https://lists.example.test/a.txt".into()], format: ListFormat::Hosts });
+        let yaml = export_yaml(&config, None).unwrap();
+        assert!(Config::parse_yaml(&yaml).unwrap().lists.contains_key("ads"));
     }
 
     #[test]

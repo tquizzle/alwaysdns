@@ -13,6 +13,12 @@ export function settingsBody(current: Settings, patch: Partial<SettingsBody>): S
   };
 }
 
+/** `alwaysdns-settings-2026-11-06.yaml`, so exports from different days do not overwrite each other. */
+export function exportFilename(now: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `alwaysdns-settings-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.yaml`;
+}
+
 /** A whole number of days, at least 1, or null. */
 export function parseDays(text: string): number | null {
   const trimmed = text.trim();
