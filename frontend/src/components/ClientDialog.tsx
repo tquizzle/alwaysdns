@@ -107,7 +107,7 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
             <span>Networks, one per line (CIDR)</span>
             <textarea
               className="mono"
-              rows={2}
+              rows={3}
               value={cidrs}
               spellCheck={false}
               placeholder={'192.168.1.10/32\n198.51.100.0/24'}

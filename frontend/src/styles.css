@@ -45,6 +45,9 @@ body {
 
 h1 { font-size: 1.5rem; margin: 0; font-weight: 650; }
 
+a { color: var(--accent-soft); }
+a:hover { color: var(--text); }
+
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
