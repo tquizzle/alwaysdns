@@ -125,6 +125,9 @@ a:hover { color: var(--text); }
 
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
 .brand-lg { font-size: 1.3rem; }
+.brand-dns { color: var(--accent); }
+.nav a { display: inline-flex; align-items: center; gap: 7px; }
+.nav-icon { width: 16px; height: 16px; flex: none; }
 .brand-mark { width: 24px; height: 24px; flex: none; color: var(--accent); filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.6)); }
 
 .nav { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -761,4 +764,12 @@ details.insight[open] > summary { margin-bottom: 12px; }
 }
 @media (max-width: 420px) {
   .dash-top-grid .dash-kpis { grid-template-columns: 1fr; }
+}
+
+/* Phones: only the current page keeps its nav label, so all five tabs fit. The others keep the text for screen readers. */
+@media (max-width: 720px) {
+  .nav { justify-content: space-between; }
+  .nav a { flex: 1 1 auto; justify-content: center; padding-inline: 10px; }
+  .nav a:not(.active) .nav-label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .nav-icon { width: 20px; height: 20px; }
 }

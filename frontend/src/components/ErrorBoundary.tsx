@@ -35,6 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="panel error-panel" role="alert">
           <h2>Something went wrong on this page</h2>
           <p className="muted">{this.state.error.message}</p>
+          <p className="muted small">It is probably not DNS.</p>
           <button type="button" className="btn" onClick={() => this.setState({ error: null })}>
             Try again
           </button>

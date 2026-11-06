@@ -4,7 +4,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ErrorState, LoadingState } from './components/States';
 import { UserMenu } from './components/UserMenu';
 import { useHashRoute, type Route } from './lib/hashRoute';
-import { BrandMark, LoginPage } from './pages/LoginPage';
+import { NavIcon } from './components/NavIcon';
+import { BrandMark, LoginPage, Wordmark } from './pages/LoginPage';
 import { Dashboard } from './pages/Dashboard';
 import { QueryLogPage } from './pages/QueryLogPage';
 import { ClientsPage } from './pages/ClientsPage';
@@ -25,7 +26,7 @@ export function App() {
   if (me.isPending) {
     return (
       <div className="boot">
-        <LoadingState label="Checking session" />
+        <LoadingState label="Resolving session" />
       </div>
     );
   }
@@ -62,7 +63,7 @@ function Shell({ username, role }: { username: string; role: string }) {
       <header className="topbar">
         <div className="brand">
           <BrandMark />
-          <span>AlwaysDNS</span>
+          <Wordmark />
         </div>
 
         <nav className="nav" aria-label="Main">
@@ -77,7 +78,8 @@ function Shell({ username, role }: { username: string; role: string }) {
                 navigate(item.route);
               }}
             >
-              {item.label}
+              <NavIcon route={item.route} />
+              <span className="nav-label">{item.label}</span>
             </a>
           ))}
         </nav>
@@ -104,7 +106,7 @@ function Shell({ username, role }: { username: string; role: string }) {
 function HealthPill() {
   const health = useHealth();
   if (health.isError) {
-    return <span className="pill pill-red" role="status">API offline</span>;
+    return <span className="pill pill-red" role="status">API offline · check DNS</span>;
   }
   if (!health.data) {
     return <span className="pill" role="status">Checking</span>;

@@ -26,7 +26,7 @@ export function LoginPage() {
       <form className="panel login-card" onSubmit={onSubmit} noValidate>
         <div className="brand brand-lg">
           <BrandMark />
-          <span>AlwaysDNS</span>
+          <Wordmark />
         </div>
         <p className="muted">Sign in to view queries, clients and settings.</p>
 
@@ -68,11 +68,21 @@ export function LoginPage() {
   );
 }
 
+/** A ring with a gap in the upper right and the resolver at its centre: the outage is the gap. */
 export function BrandMark() {
   return (
     <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" strokeWidth="3" strokeDasharray="60 20" transform="rotate(-90 16 16)" />
+      <circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="55 20" />
       <circle cx="16" cy="16" r="3.5" fill="currentColor" />
     </svg>
+  );
+}
+
+/** "AlwaysDNS" with DNS in the accent colour. Reads as one word to a screen reader. */
+export function Wordmark() {
+  return (
+    <span>
+      Always<span className="brand-dns">DNS</span>
+    </span>
   );
 }

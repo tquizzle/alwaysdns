@@ -211,7 +211,13 @@ function DashboardBody({ stats }: { stats: Stats }) {
         <div className="blocked-split">
           <div>
             <h3 className="sub-head">Top blocked, with the list that blocked each</h3>
-            <BarList items={stats.top_blocked} tone="red" emptyText="Nothing blocked yet." maxRows={5} linkTo={queryLogLink} />
+            <BarList
+              items={stats.top_blocked}
+              tone="red"
+              emptyText="Nothing blocked yet. Either the network is quiet, or it is DNS."
+              maxRows={5}
+              linkTo={queryLogLink}
+            />
           </div>
           <div>
             <h3 className="sub-head">Blocked queries by list</h3>
