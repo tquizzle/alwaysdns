@@ -114,6 +114,13 @@ here before the first start.
 If `config.yaml` does not exist, the server creates it from the built-in default
 on first start, so step 3 is optional for a fresh install.
 
+File block or allow lists must live in the lists directory: `lists/` inside the
+data volume (`/app/data/lists`), or the folder named by `DNSUI_LISTS_DIR`. The
+folder is not created for you. Create it with
+`docker compose exec dnsui mkdir -p /app/data/lists`, then copy the file in with
+`docker compose cp ads.txt dnsui:/app/data/lists/ads.txt` and use that absolute
+path as the source. Paths outside the folder are refused.
+
 ## 4. Start the service
 
 ```sh

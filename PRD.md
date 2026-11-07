@@ -73,6 +73,9 @@ Resolvers and groups are on the Upstreams page, clients on the Clients page, and
 ### Block and allow lists
 
 - A list source is an http(s) URL or an absolute file path on the server.
+  - URLs: the host is resolved before any request, and the source is refused if any address is loopback, unspecified, link-local or multicast (IPv4-mapped IPv6 included). Private LAN addresses are allowed. Redirects are capped at five hops and stop at a literal blocked IP.
+  - Files: the path must resolve, after symlinks and `..`, inside the lists directory: `DNSUI_LISTS_DIR`, or `lists/` in the data directory. Other paths are refused. Existing rows outside it keep their place and show the error on refresh.
+  - Known limit: a hostname that re-resolves to a blocked address after the check (DNS rebinding) is not caught, and a redirect to a hostname is not checked.
 - Formats: auto, hosts, plain, abp.
 - Lists can be added, edited, deleted, enabled or disabled, and refreshed. Each list shows its rule count, last updated time and any error.
 - Block lists are assigned per client, plus a default assignment for unknown devices.
