@@ -14,6 +14,7 @@ use tracing::{info, warn};
 
 use crate::config::{ListConfig, ListFormat};
 use crate::rules::{is_valid_domain, normalize_name};
+use crate::sourceguard;
 
 /// Hostnames that appear in hosts files but are not blocking targets.
 const HOSTS_RESERVED: &[&str] = &[
@@ -274,14 +275,16 @@ pub async fn load_list(
 }
 
 /// Returns the text of one source. For URLs, a successful download is written
-/// to the cache, and a failed download falls back to the cached copy. The
-/// second value is a note when the cached copy was used.
+/// to the cache, and a failed download falls back to the cached copy. A source
+/// refused by `sourceguard` never reaches the cache. The second value is a note
+/// when the cached copy was used.
 pub(crate) async fn fetch_source(
     http: &reqwest::Client,
     source: &str,
     cache_dir: &Path,
 ) -> Result<(String, Option<String>), String> {
     if source.starts_with("http://") || source.starts_with("https://") {
+        sourceguard::check_url_source(source).await?;
         let cache_path = cache_path_for(cache_dir, source);
         match download(http, source).await {
             Ok(text) => {
@@ -299,7 +302,8 @@ pub(crate) async fn fetch_source(
             },
         }
     } else {
-        tokio::fs::read_to_string(source)
+        let path = sourceguard::check_file_source(source, &sourceguard::lists_dir())?;
+        tokio::fs::read_to_string(&path)
             .await
             .map(|t| (t, None))
             .map_err(|e| format!("read failed: {e}"))

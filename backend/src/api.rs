@@ -31,6 +31,7 @@ use crate::models::{HistoryResponse, QueryItem, QueryLogResponse, StatsResponse,
 use crate::redact::{redact_client, redact_query, redact_source, redact_stats};
 use crate::ratelimit::retry_after_secs;
 use crate::rules::{is_valid_domain, normalize_rule_domain};
+use crate::sourceguard;
 use crate::telemetry::Range;
 
 /// Most rows one query-log page may return.
@@ -1054,6 +1055,19 @@ fn validate_source(raw: &str) -> Result<String, ApiError> {
     Ok(source.to_string())
 }
 
+/// Shape check plus the network and lists-directory rules in `sourceguard`.
+/// Runs before a list is stored, so the admin sees the refusal immediately.
+async fn checked_source(raw: &str) -> Result<String, ApiError> {
+    let source = validate_source(raw)?;
+    let verdict = if source.starts_with("http://") || source.starts_with("https://") {
+        sourceguard::check_url_source(&source).await.map(|_| ())
+    } else {
+        sourceguard::check_file_source(&source, &sourceguard::lists_dir()).map(|_| ())
+    };
+    verdict.map_err(ApiError::bad_request)?;
+    Ok(source)
+}
+
 fn validate_format(raw: Option<String>) -> Result<String, ApiError> {
     match raw {
         None => Ok(db::format_name(ListFormat::Auto).to_string()),
@@ -1089,7 +1103,7 @@ async fn create_list(
     let new = NewList {
         kind,
         name: validate_name(&body.name)?,
-        url: validate_source(&body.url)?,
+        url: checked_source(&body.url).await?,
         enabled: body.enabled.unwrap_or(true),
         format: validate_format(body.format)?,
     };
@@ -1115,9 +1129,13 @@ async fn update_list(
         ));
     }
 
+    let url = match body.url.as_deref() {
+        Some(raw) => Some(checked_source(raw).await?),
+        None => None,
+    };
     let patch = ListPatch {
         name: body.name.as_deref().map(validate_name).transpose()?,
-        url: body.url.as_deref().map(validate_source).transpose()?,
+        url,
         enabled: body.enabled,
         format: body.format.map(|f| validate_format(Some(f))).transpose()?,
     };
@@ -2139,6 +2157,20 @@ mod tests {
         assert_eq!(bucket_for_span(3600), 60);
         assert_eq!(bucket_for_span(7 * 86_400), 3600);
         assert_eq!(bucket_for_span(90 * 86_400), 86_400);
+    }
+
+    #[tokio::test]
+    async fn list_sources_pointing_at_the_host_are_refused_with_400() {
+        // Shape checks pass for these; the guard must stop them before a row is stored.
+        for raw in [
+            "http://169.254.169.254/latest/",
+            "http://127.0.0.1/list.txt",
+            "/etc/hosts",
+        ] {
+            let err = checked_source(raw).await.unwrap_err();
+            assert_eq!(err.status, StatusCode::BAD_REQUEST, "{raw} must be a 400");
+        }
+        assert!(checked_source("http://10.0.0.5:8080/list").await.is_ok());
     }
 
     #[test]

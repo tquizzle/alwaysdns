@@ -23,6 +23,7 @@ mod redact;
 mod ratelimit;
 mod rules;
 mod services;
+mod sourceguard;
 mod telemetry;
 mod upstream;
 
@@ -129,6 +130,7 @@ fn env_flag(key: &str) -> bool {
 fn build_http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
+        .redirect(sourceguard::redirect_policy())
         .build()
         .context("building HTTP client")
 }
