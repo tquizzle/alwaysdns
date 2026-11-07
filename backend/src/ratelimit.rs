@@ -8,6 +8,11 @@ use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use anyhow::{Context, Result, bail};
+use ipnet::IpNet;
+
+use crate::rules::{canonical_ip, parse_cidr};
+
 /// Failures that are free before a key starts to be locked.
 const FREE_FAILURES: u32 = 5;
 /// Lock after the first locked failure. Each later failure doubles it.
@@ -135,6 +140,68 @@ impl LoginLimiter {
 /// Lowercased and cut to `MAX_KEY_CHARS`, so that `Admin` and `admin` share a counter.
 fn user_key(username: &str) -> String {
     username.to_lowercase().chars().take(MAX_KEY_CHARS).collect()
+}
+
+/// Parses `DNSUI_TRUSTED_PROXIES`: comma-separated IPs or CIDRs. Empty means no proxy is trusted.
+pub fn parse_trusted_proxies(raw: &str) -> Result<Vec<IpNet>> {
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    raw.split(',').map(parse_trusted_entry).collect()
+}
+
+fn parse_trusted_entry(raw: &str) -> Result<IpNet> {
+    let entry = raw.trim();
+    if entry.is_empty() {
+        bail!("DNSUI_TRUSTED_PROXIES has an empty entry (check for a stray comma)");
+    }
+    let net = parse_cidr(entry)
+        .with_context(|| format!("DNSUI_TRUSTED_PROXIES: invalid entry '{entry}'"))?;
+    Ok(unmap_net(net))
+}
+
+/// Writes an IPv4-mapped IPv6 network (`::ffff:a.b.c.d/n`) as the IPv4 network it covers,
+/// so that it matches the canonical IPv4 peer address.
+fn unmap_net(net: IpNet) -> IpNet {
+    let IpNet::V6(v6) = net else {
+        return net;
+    };
+    match v6.addr().to_ipv4_mapped() {
+        Some(v4) if v6.prefix_len() >= 96 => {
+            IpNet::new(IpAddr::V4(v4), v6.prefix_len() - 96)
+                .expect("a prefix of at most 32 is valid for IPv4")
+        }
+        _ => net,
+    }
+}
+
+fn is_trusted(ip: IpAddr, trusted: &[IpNet]) -> bool {
+    trusted.iter().any(|net| net.contains(&ip))
+}
+
+/// The address for the per-IP login limit. The `X-Forwarded-For` header is believed only
+/// when the TCP peer is a trusted proxy. The proxy appends the address it saw, so the
+/// rightmost entry that is not a trusted proxy is the client. Anything further left was
+/// written by the client and is ignored.
+pub fn client_ip(peer: IpAddr, forwarded_for: Option<&str>, trusted: &[IpNet]) -> IpAddr {
+    let peer = canonical_ip(peer);
+    if !is_trusted(peer, trusted) {
+        return peer;
+    }
+    forwarded_for
+        .and_then(|chain| rightmost_untrusted(chain, trusted))
+        .unwrap_or(peer)
+}
+
+/// Walks the list from the right and returns the first entry that is not a trusted proxy.
+/// `None` when any entry is not an IP, or when every entry is a trusted proxy.
+fn rightmost_untrusted(chain: &str, trusted: &[IpNet]) -> Option<IpAddr> {
+    let hops = chain
+        .split(',')
+        .map(|hop| hop.trim().parse::<IpAddr>().map(canonical_ip))
+        .collect::<std::result::Result<Vec<IpAddr>, _>>()
+        .ok()?;
+    hops.into_iter().rev().find(|hop| !is_trusted(*hop, trusted))
 }
 
 #[cfg(test)]
@@ -280,6 +347,109 @@ mod tests {
         let map = backoff.lock();
         assert!(map.contains_key("live"), "the locked key survived");
         assert_eq!(map.len(), 2);
+    }
+
+    fn addr(raw: &str) -> IpAddr {
+        raw.parse().unwrap()
+    }
+
+    fn proxies(list: &str) -> Vec<IpNet> {
+        parse_trusted_proxies(list).unwrap()
+    }
+
+    #[test]
+    fn untrusted_peer_ignores_a_spoofed_forwarded_for() {
+        // Any client can send any X-Forwarded-For. If an untrusted peer's header were believed,
+        // an attacker could name a new address on every guess and never reach a lock.
+        let nets = proxies("203.0.113.116/32");
+        assert_eq!(client_ip(addr("198.51.100.9"), Some("10.0.0.1"), &nets), addr("198.51.100.9"));
+    }
+
+    #[test]
+    fn trusted_peer_uses_the_client_from_the_header() {
+        // Behind Caddy every request arrives from Caddy. The per-IP limit must key on the
+        // visitor that Caddy reports, or all visitors share one lock.
+        let nets = proxies("203.0.113.116/32");
+        assert_eq!(client_ip(addr("203.0.113.116"), Some("198.51.100.10"), &nets), addr("198.51.100.10"));
+    }
+
+    #[test]
+    fn multi_hop_chain_returns_the_client_behind_every_trusted_proxy() {
+        // With a second proxy in front of the first, the header is "client, proxy2". Both proxies
+        // must be skipped, or the lock would land on a proxy and be shared by every visitor.
+        let nets = proxies("203.0.113.116/32, 203.0.113.117/32");
+        let chain = Some("198.51.100.10, 203.0.113.117");
+        assert_eq!(client_ip(addr("203.0.113.116"), chain, &nets), addr("198.51.100.10"));
+    }
+
+    #[test]
+    fn a_spoofed_leftmost_value_is_not_chosen() {
+        // A client can send "10.9.9.9" as the first entry. The proxy appends the real client
+        // after it, so the rightmost untrusted entry is the one to use, never the leftmost.
+        let nets = proxies("203.0.113.116/32");
+        let chain = Some("10.9.9.9, 198.51.100.10");
+        assert_eq!(client_ip(addr("203.0.113.116"), chain, &nets), addr("198.51.100.10"));
+    }
+
+    #[test]
+    fn missing_empty_or_malformed_header_falls_back_to_the_peer() {
+        // A broken header cannot be trusted to name a client, so the proxy address is used.
+        // The limit then stays shared but safe, instead of letting garbage pick the key.
+        let nets = proxies("203.0.113.116/32");
+        let proxy = addr("203.0.113.116");
+        let headers = [None, Some(""), Some("not-an-ip"), Some("198.51.100.10, junk"), Some("198.51.100.10,,")];
+        for header in headers {
+            assert_eq!(client_ip(proxy, header, &nets), proxy, "header {header:?}");
+        }
+    }
+
+    #[test]
+    fn a_chain_of_only_trusted_proxies_falls_back_to_the_peer() {
+        // Every entry is a proxy, so no client can be named and the peer is the only safe key.
+        let nets = proxies("203.0.113.116/32, 203.0.113.117/32");
+        let proxy = addr("203.0.113.116");
+        assert_eq!(client_ip(proxy, Some("203.0.113.117"), &nets), proxy);
+    }
+
+    #[test]
+    fn empty_trusted_list_ignores_the_header() {
+        // The default. With no proxy configured, the key must stay the TCP peer, as before.
+        assert_eq!(client_ip(addr("203.0.113.116"), Some("198.51.100.10"), &[]), addr("203.0.113.116"));
+    }
+
+    #[test]
+    fn ipv6_proxy_and_client_are_matched_by_prefix() {
+        // A v6 proxy range must trust its own addresses, and a v6 client in the header must come back whole.
+        let nets = proxies("2001:db8::/32");
+        assert_eq!(client_ip(addr("2001:db8::1"), Some("2001:4860:4860::8888"), &nets), addr("2001:4860:4860::8888"));
+        assert_eq!(client_ip(addr("2001:4860::1"), Some("198.51.100.10"), &nets), addr("2001:4860::1"));
+    }
+
+    #[test]
+    fn ipv4_mapped_addresses_match_plain_ipv4() {
+        // A dual-stack socket reports an IPv4 peer as ::ffff:a.b.c.d. That must match an IPv4 entry,
+        // and a mapped address in the header must give the same key as the plain form.
+        let mapped_entry = proxies("::ffff:203.0.113.116");
+        let mapped = client_ip(addr("::ffff:203.0.113.116"), Some("::ffff:198.51.100.10"), &mapped_entry);
+        assert_eq!(mapped, addr("198.51.100.10"));
+        let plain_entry = proxies("203.0.113.116/32");
+        assert_eq!(client_ip(addr("::ffff:203.0.113.116"), Some("198.51.100.10"), &plain_entry), addr("198.51.100.10"));
+    }
+
+    #[test]
+    fn invalid_trusted_entry_is_rejected_and_named() {
+        // A typo must not quietly trust nothing or the wrong range. Start-up stops and names the entry.
+        let err = parse_trusted_proxies("203.0.113.116/32, 10.0.0.0/33").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("DNSUI_TRUSTED_PROXIES"), "{msg}");
+        assert!(msg.contains("10.0.0.0/33"), "{msg}");
+        assert!(parse_trusted_proxies("203.0.113.116,").is_err(), "a stray comma is an error");
+    }
+
+    #[test]
+    fn unset_or_blank_trusted_proxies_trust_nobody() {
+        assert!(parse_trusted_proxies("").unwrap().is_empty());
+        assert!(parse_trusted_proxies("   ").unwrap().is_empty());
     }
 
     fn fail_n_backoff(backoff: &Backoff, key: &str, n: u32, now: Instant) {

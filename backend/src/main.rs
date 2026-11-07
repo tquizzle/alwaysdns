@@ -184,6 +184,8 @@ async fn serve() -> Result<()> {
             "DNSUI_GEOIP_DB",
             &data_dir.join("GeoLite2-Country.mmdb").display().to_string(),
         ))),
+        // A bad entry stops start-up here, so a typo never silently trusts nothing.
+        trusted_proxies: ratelimit::parse_trusted_proxies(&env_or("DNSUI_TRUSTED_PROXIES", ""))?,
     };
 
     let admin = auth::resolve_admin(|key| std::env::var(key).ok(), &data_dir)?;

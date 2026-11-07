@@ -29,7 +29,7 @@ use crate::db::{self, ListPatch, ListRecord, QueryFilter, QueryRecord};
 use crate::insights;
 use crate::models::{HistoryResponse, QueryItem, QueryLogResponse, StatsResponse, TimelinePoint, TopEntry};
 use crate::redact::{redact_client, redact_query, redact_source, redact_stats};
-use crate::ratelimit::retry_after_secs;
+use crate::ratelimit::{client_ip, retry_after_secs};
 use crate::rules::{is_valid_domain, normalize_rule_domain};
 use crate::sourceguard;
 use crate::telemetry::Range;
@@ -235,15 +235,26 @@ fn too_many_logins(wait: Duration) -> Response {
         .into_response()
 }
 
+/// The `X-Forwarded-For` value, with repeated headers joined by commas. `None` when absent or not ASCII.
+fn forwarded_for(headers: &HeaderMap) -> Option<String> {
+    let mut values = Vec::new();
+    for value in headers.get_all("x-forwarded-for") {
+        values.push(value.to_str().ok()?);
+    }
+    (!values.is_empty()).then(|| values.join(","))
+}
+
 async fn login(
     State(state): State<Arc<AppState>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     body: Result<Json<LoginBody>, JsonRejection>,
 ) -> Result<Response, ApiError> {
     let Json(body) = body.map_err(|e| ApiError::bad_request(e.body_text()))?;
+    let ip = client_ip(peer.ip(), forwarded_for(&headers).as_deref(), &state.trusted_proxies);
     // One attempt at a time, so a burst cannot run argon2 before any failure is recorded.
     let _turn = state.login_limits.take_turn().await;
-    if let Some(wait) = state.login_limits.wait_before(&body.username, peer.ip(), Instant::now()) {
+    if let Some(wait) = state.login_limits.wait_before(&body.username, ip, Instant::now()) {
         return Ok(too_many_logins(wait));
     }
     // Argon2 is slow by design. Run it off the async executor.
@@ -253,7 +264,7 @@ async fn login(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let Some(role) = role else {
-        state.login_limits.record_failure(&body.username, peer.ip(), Instant::now());
+        state.login_limits.record_failure(&body.username, ip, Instant::now());
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid username or password"));
     };
     state.login_limits.record_success(&body.username);
@@ -1919,11 +1930,12 @@ mod login_tests {
     use super::*;
     use crate::app::Options;
     use crate::auth::{AdminCredentials, Users, hash_password};
+    use ipnet::IpNet;
 
     const PEER: &str = "192.0.2.7:5555";
 
     /// Builds real application state with one admin, and no database or lists to load.
-    async fn state_with_admin(dir: &std::path::Path) -> Arc<AppState> {
+    async fn state_with_admin(dir: &std::path::Path, trusted_proxies: Vec<IpNet>) -> Arc<AppState> {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let config = dir.join("config.yaml");
         let yaml = "bootstrap: [\"9.9.9.10\"]\nresolvers:\n  Quad9: \"https://dns10.quad9.net/dns-query\"\nupstream_groups:\n  default: [Quad9]\n";
@@ -1941,6 +1953,7 @@ mod login_tests {
             cookie_secure: false,
             db_path: None,
             geoip_db: None,
+            trusted_proxies,
         };
         AppState::new(reqwest::Client::new(), opts, users, StatsSource::Native)
             .await
@@ -1948,11 +1961,28 @@ mod login_tests {
     }
 
     async fn attempt(state: &Arc<AppState>, user: &str, pass: &str) -> Response {
-        let peer: SocketAddr = PEER.parse().unwrap();
+        attempt_from(state, PEER, HeaderMap::new(), user, pass).await
+    }
+
+    /// One login from `peer` that carries `headers`, such as `X-Forwarded-For`.
+    async fn attempt_from(
+        state: &Arc<AppState>,
+        peer: &str,
+        headers: HeaderMap,
+        user: &str,
+        pass: &str,
+    ) -> Response {
+        let peer: SocketAddr = peer.parse().unwrap();
         let body = LoginBody { username: user.into(), password: pass.into() };
-        login(State(state.clone()), ConnectInfo(peer), Ok(Json(body)))
+        login(State(state.clone()), ConnectInfo(peer), headers, Ok(Json(body)))
             .await
             .unwrap_or_else(IntoResponse::into_response)
+    }
+
+    fn forwarded_for_header(client: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", client.parse().unwrap());
+        headers
     }
 
     fn fresh_dir(name: &str) -> std::path::PathBuf {
@@ -1967,7 +1997,7 @@ mod login_tests {
         // A lock must hold for every guess. If the right password got through while locked,
         // the lock would only slow guessing down and never stop it.
         let dir = fresh_dir("dnsui-login-lock");
-        let state = state_with_admin(&dir).await;
+        let state = state_with_admin(&dir, Vec::new()).await;
         for _ in 0..6 {
             assert_eq!(attempt(&state, "admin", "wrong").await.status(), StatusCode::UNAUTHORIZED);
         }
@@ -1980,11 +2010,30 @@ mod login_tests {
     }
 
     #[tokio::test]
+    async fn two_clients_behind_one_trusted_proxy_get_independent_lockouts() {
+        // Behind Caddy both visitors arrive from the proxy. Keying the per-IP limit on the
+        // peer would lock everyone out after one visitor's six typos. The header names each visitor.
+        let dir = fresh_dir("dnsui-login-proxy");
+        let proxy: IpNet = "192.0.2.7/32".parse().unwrap();
+        let state = state_with_admin(&dir, vec![proxy]).await;
+        for i in 1..=6 {
+            let user = format!("guess{i}");
+            let header = forwarded_for_header("198.51.100.10");
+            assert_eq!(attempt_from(&state, PEER, header, &user, "x").await.status(), StatusCode::UNAUTHORIZED);
+        }
+        let locked = attempt_from(&state, PEER, forwarded_for_header("198.51.100.10"), "fresh", "x").await;
+        assert_eq!(locked.status(), StatusCode::TOO_MANY_REQUESTS, "the first visitor is locked");
+        let other = attempt_from(&state, PEER, forwarded_for_header("198.51.100.20"), "bob", "x").await;
+        assert_eq!(other.status(), StatusCode::UNAUTHORIZED, "the second visitor is not locked");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn unknown_usernames_are_locked_exactly_like_real_ones() {
         // Otherwise a lock on a real name and on a made-up name would differ, and the
         // difference would reveal which usernames exist.
         let dir = fresh_dir("dnsui-login-unknown");
-        let state = state_with_admin(&dir).await;
+        let state = state_with_admin(&dir, Vec::new()).await;
         for _ in 0..6 {
             assert_eq!(attempt(&state, "nobody", "x").await.status(), StatusCode::UNAUTHORIZED);
         }

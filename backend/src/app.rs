@@ -16,6 +16,7 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{Result, anyhow};
 use chrono::Utc;
+use ipnet::IpNet;
 use serde::Serialize;
 use tracing::{error, info, warn};
 
@@ -48,6 +49,8 @@ pub struct Options {
     pub db_path: Option<PathBuf>,
     /// Path of a MaxMind country database. Missing file means no destination map.
     pub geoip_db: Option<PathBuf>,
+    /// Proxies whose `X-Forwarded-For` header is believed for the per-IP login limit.
+    pub trusted_proxies: Vec<IpNet>,
 }
 
 /// Which database-backed lists to download during a load.
@@ -100,6 +103,8 @@ pub struct AppState {
     pub users: Users,
     pub sessions: Sessions,
     pub login_limits: LoginLimiter,
+    /// Proxies trusted to report the client address. Empty means the TCP peer is the client.
+    pub trusted_proxies: Vec<IpNet>,
     pub stats_source: StatsSource,
     /// The database, when it is on and opened. `None` falls back to the
     /// in-memory query log and to lists from `config.yaml`.
@@ -164,6 +169,7 @@ impl AppState {
             users,
             sessions: Sessions::new(),
             login_limits: LoginLimiter::default(),
+            trusted_proxies: opts.trusted_proxies,
             stats_source,
             db,
             db_error,
