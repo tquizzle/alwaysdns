@@ -185,6 +185,13 @@ ssh <user>@203.0.113.116 'sudo caddy validate --config /etc/caddy/Caddyfile \
 
 Then open `https://dns.example.test` from a LAN client.
 
+With this reverse proxy, set `DNSUI_TRUSTED_PROXIES=203.0.113.116/32` in `dnsui.env`
+and recreate the container. Without it, every request arrives from the proxy, so the
+per-IP login limit is shared by all users: a few failed logins lock everyone out.
+The setting only matches if the container sees the proxy's own address as the
+connection source. If requests arrive from another address, such as a Docker
+gateway, the setting does not match and the limit stays shared.
+
 ## 7. VPN and zero-trust DNS settings
 
 No change is needed in a VPN or zero-trust client's DNS settings. The dashboard is reached as
