@@ -103,6 +103,7 @@ Resolvers and groups are on the Upstreams page, clients on the Clients page, and
 ### Access and display
 
 - Login with a session cookie. Sessions last 12 hours.
+- Failed logins back off in memory, per username and per client IP. The first 5 failures are free, then each failure locks that key for 30 seconds, doubling up to 15 minutes; a locked login gets HTTP 429 with `Retry-After`. A good login clears the username's count. Tradeoff: anyone can lock a known username out for up to 15 minutes by guessing it.
 - Two roles:
   - Admin: full access, including configuration changes, block actions and the Upstreams page.
   - Viewer: read-only. Client names are redacted, list URLs are masked, list errors show only "failed", and the domain filter and the Upstreams page are unavailable.
