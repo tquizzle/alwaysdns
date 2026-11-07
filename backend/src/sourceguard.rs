@@ -133,6 +133,11 @@ fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
 }
 
+/// Creates the lists directory when it is missing. An existing directory is fine.
+pub fn ensure_lists_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
 /// Resolves a file source to its canonical path, which must be absolute and
 /// must lie inside `dir` once symlinks and `..` are resolved. Errors name the
 /// directory and never include file contents.
@@ -328,6 +333,37 @@ mod tests {
         let source = lists.join("missing.txt").display().to_string();
         let err = check_file_source(&source, &lists).unwrap_err();
         assert!(err.contains(&lists.display().to_string()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn lists_dir_is_created_when_missing() {
+        // Start-up creates it, so an admin can copy files in without a manual mkdir.
+        let root = scratch_dir("ensure");
+        let dir = root.join("data").join("lists");
+        ensure_lists_dir(&dir).unwrap();
+        assert!(dir.is_dir());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn existing_lists_dir_is_left_alone() {
+        // A restart finds the folder already there, and the files in it must survive.
+        let root = scratch_dir("ensure-exists");
+        let lists = root.join("lists");
+        std::fs::write(lists.join("keep.txt"), "x").unwrap();
+        ensure_lists_dir(&lists).unwrap();
+        assert!(lists.join("keep.txt").is_file());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn lists_dir_under_a_regular_file_fails_without_panicking() {
+        // A read-only or misconfigured volume must return an error the caller can log.
+        let root = scratch_dir("ensure-fail");
+        let blocker = root.join("blocker");
+        std::fs::write(&blocker, "not a directory").unwrap();
+        assert!(ensure_lists_dir(&blocker.join("lists")).is_err());
         std::fs::remove_dir_all(root).ok();
     }
 

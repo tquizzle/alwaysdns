@@ -154,6 +154,15 @@ fn stats_source_from_env(http: &reqwest::Client) -> Result<StatsSource> {
     }
 }
 
+/// Creates the lists directory so admins can place files in it. A failure is only
+/// logged: the resolver still serves DNS and the UI without it.
+fn create_lists_dir() {
+    let dir = sourceguard::lists_dir();
+    if let Err(e) = sourceguard::ensure_lists_dir(&dir) {
+        warn!(dir = %dir.display(), error = %e, "could not create the lists directory");
+    }
+}
+
 async fn serve() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -172,6 +181,7 @@ async fn serve() -> Result<()> {
     if crate::config::Config::seed_if_missing(&config_path, &seed_path)? {
         info!(config = %config_path.display(), seed = %seed_path.display(), "created config from seed");
     }
+    create_lists_dir();
     let opts = Options {
         config_path: config_path.clone(),
         cache_dir: PathBuf::from(env_or("DNSUI_CACHE_DIR", "cache")),
