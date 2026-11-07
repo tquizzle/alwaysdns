@@ -116,8 +116,7 @@ on first start, so step 3 is optional for a fresh install.
 
 File block or allow lists must live in the lists directory: `lists/` inside the
 data volume (`/app/data/lists`), or the folder named by `DNSUI_LISTS_DIR`. The
-folder is not created for you. Create it with
-`docker compose exec dnsui mkdir -p /app/data/lists`, then copy the file in with
+server creates the folder at start-up. Copy the file in with
 `docker compose cp ads.txt dnsui:/app/data/lists/ads.txt` and use that absolute
 path as the source. Paths outside the folder are refused.
 
@@ -186,7 +185,9 @@ ssh <user>@203.0.113.116 'sudo caddy validate --config /etc/caddy/Caddyfile \
 Then open `https://dns.example.test` from a LAN client.
 
 With this reverse proxy, set `DNSUI_TRUSTED_PROXIES=203.0.113.116/32` in `dnsui.env`
-and recreate the container. Without it, every request arrives from the proxy, so the
+and recreate the container. List only your reverse proxy's own address. A broad range
+such as `0.0.0.0/0` or `::ffff:0:0/96` lets any client spoof its address and defeats
+the per-IP login limit. Without it, every request arrives from the proxy, so the
 per-IP login limit is shared by all users: a few failed logins lock everyone out.
 The setting only matches if the container sees the proxy's own address as the
 connection source. If requests arrive from another address, such as a Docker
