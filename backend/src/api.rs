@@ -1067,15 +1067,20 @@ fn validate_source(raw: &str) -> Result<String, ApiError> {
 }
 
 /// Shape check plus the network and lists-directory rules in `sourceguard`.
-/// Runs before a list is stored, so the admin sees the refusal immediately.
+/// Runs before a list is stored, so the admin sees the refusal immediately. A host
+/// that does not resolve is accepted: the admin may be offline, and the refresh
+/// reports the failure.
 async fn checked_source(raw: &str) -> Result<String, ApiError> {
     let source = validate_source(raw)?;
-    let verdict = if source.starts_with("http://") || source.starts_with("https://") {
-        sourceguard::check_url_source(&source).await.map(|_| ())
+    if source.starts_with("http://") || source.starts_with("https://") {
+        match sourceguard::check_url_source(&source).await {
+            Ok(()) | Err(sourceguard::SourceError::Unresolved(_)) => {}
+            Err(refused) => return Err(ApiError::bad_request(refused.to_string())),
+        }
     } else {
-        sourceguard::check_file_source(&source, &sourceguard::lists_dir()).map(|_| ())
-    };
-    verdict.map_err(ApiError::bad_request)?;
+        sourceguard::check_file_source(&source, &sourceguard::lists_dir())
+            .map_err(ApiError::bad_request)?;
+    }
     Ok(source)
 }
 
@@ -2220,6 +2225,15 @@ mod tests {
             assert_eq!(err.status, StatusCode::BAD_REQUEST, "{raw} must be a 400");
         }
         assert!(checked_source("http://10.0.0.5:8080/list").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn unresolvable_list_host_is_accepted_while_a_blocked_one_is_400() {
+        // A DNS outage must not stop an admin adding a list; the refresh reports it.
+        // A blocked address is still refused at create time, so the admin sees why.
+        assert!(checked_source("https://cache-test.invalid/ads.txt").await.is_ok());
+        let err = checked_source("http://127.0.0.1:1/x").await.unwrap_err();
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
     }
 
     #[test]

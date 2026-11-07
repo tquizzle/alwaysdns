@@ -6,6 +6,7 @@
 //! check (DNS rebinding) is not caught. Redirects are checked only when the
 //! target is a literal IP; a redirect to a hostname is followed unchecked.
 
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,23 @@ use url::{Host, Url};
 
 /// Redirects a download may follow before it is abandoned.
 const MAX_REDIRECTS: usize = 5;
+
+/// Why a URL source was refused. `Blocked` is a hard refusal. `Unresolved` means
+/// the host has no address to judge, which is a DNS failure, not an unsafe source.
+/// A malformed URL is `Blocked`: it can never download, so no cached copy exists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceError {
+    Blocked(String),
+    Unresolved(String),
+}
+
+impl fmt::Display for SourceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Blocked(msg) | Self::Unresolved(msg) => f.write_str(msg),
+        }
+    }
+}
 
 /// True for addresses a list source must never reach. Private LAN ranges
 /// (RFC 1918, fc00::/7) are allowed on purpose: homelab users host lists there.
@@ -39,35 +57,40 @@ fn is_blocked_v6(ip: Ipv6Addr) -> bool {
 
 /// Refuses a URL source when its host resolves to any blocked address. Nothing
 /// is requested when this fails. Literal IPs are checked without a lookup.
-pub async fn check_url_source(source: &str) -> Result<(), String> {
-    let url = Url::parse(source).map_err(|e| format!("url is not valid: {e}"))?;
-    let port = url.port_or_known_default().ok_or("url has no port")?;
+pub async fn check_url_source(source: &str) -> Result<(), SourceError> {
+    let url = Url::parse(source)
+        .map_err(|e| SourceError::Blocked(format!("url is not valid: {e}")))?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| SourceError::Blocked("url has no port".into()))?;
     let addrs = match url.host() {
         Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
         Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
         Some(Host::Domain(domain)) => resolve(domain, port).await?,
-        None => return Err("url has no host".into()),
+        None => return Err(SourceError::Blocked("url has no host".into())),
     };
     refuse_if_blocked(&addrs)
 }
 
-async fn resolve(host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
+async fn resolve(host: &str, port: u16) -> Result<Vec<IpAddr>, SourceError> {
     let addrs: Vec<IpAddr> = tokio::net::lookup_host((host, port))
         .await
-        .map_err(|e| format!("could not resolve {host}: {e}"))?
+        .map_err(|e| SourceError::Unresolved(format!("could not resolve {host}: {e}")))?
         .map(|addr| addr.ip())
         .collect();
     if addrs.is_empty() {
-        return Err(format!("{host} resolved to no addresses"));
+        return Err(SourceError::Unresolved(format!(
+            "{host} resolved to no addresses"
+        )));
     }
     Ok(addrs)
 }
 
-fn refuse_if_blocked(addrs: &[IpAddr]) -> Result<(), String> {
+fn refuse_if_blocked(addrs: &[IpAddr]) -> Result<(), SourceError> {
     match addrs.iter().find(|ip| is_blocked_ip(**ip)) {
-        Some(ip) => Err(format!(
+        Some(ip) => Err(SourceError::Blocked(format!(
             "source resolves to {ip}, which is a loopback, unspecified, link-local or multicast address"
-        )),
+        ))),
         None => Ok(()),
     }
 }
@@ -209,7 +232,25 @@ mod tests {
     #[test]
     fn blocked_ip_error_names_the_address_and_not_the_request() {
         let err = refuse_if_blocked(&[ip("127.0.0.1")]).unwrap_err();
-        assert!(err.contains("127.0.0.1"));
+        assert!(matches!(err, SourceError::Blocked(_)));
+        assert!(err.to_string().contains("127.0.0.1"));
+    }
+
+    #[tokio::test]
+    async fn unresolvable_host_is_unresolved_not_blocked() {
+        // .invalid is reserved (RFC 6761) and never resolves. The answer is "cannot
+        // tell", which lets a cached copy stand in; it must not read as "unsafe".
+        let err = check_url_source("http://cache-test.invalid/list.txt")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SourceError::Unresolved(_)));
+    }
+
+    #[tokio::test]
+    async fn literal_blocked_address_is_blocked_not_unresolved() {
+        // A literal needs no lookup, so it is always a judged refusal, never a DNS failure.
+        let err = check_url_source("http://127.0.0.1:1/x").await.unwrap_err();
+        assert!(matches!(err, SourceError::Blocked(_)));
     }
 
     fn scratch_dir(tag: &str) -> PathBuf {

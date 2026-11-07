@@ -275,38 +275,53 @@ pub async fn load_list(
 }
 
 /// Returns the text of one source. For URLs, a successful download is written
-/// to the cache, and a failed download falls back to the cached copy. A source
-/// refused by `sourceguard` never reaches the cache. The second value is a note
-/// when the cached copy was used.
+/// to the cache. A failed download, or a host that does not resolve, falls back
+/// to the cached copy. A source refused by `sourceguard` is never requested and
+/// never served from the cache. The second value is a note when the cached copy
+/// was used.
 pub(crate) async fn fetch_source(
     http: &reqwest::Client,
     source: &str,
     cache_dir: &Path,
 ) -> Result<(String, Option<String>), String> {
     if source.starts_with("http://") || source.starts_with("https://") {
-        sourceguard::check_url_source(source).await?;
-        let cache_path = cache_path_for(cache_dir, source);
-        match download(http, source).await {
-            Ok(text) => {
-                if let Err(e) = write_cache(&cache_path, &text).await {
-                    warn!(source, error = %e, "could not write list cache");
-                }
-                Ok((text, None))
-            }
-            Err(download_err) => match tokio::fs::read_to_string(&cache_path).await {
-                Ok(cached) => Ok((
-                    cached,
-                    Some(format!("download failed ({download_err}); using cached copy")),
-                )),
-                Err(_) => Err(format!("download failed: {download_err}")),
-            },
-        }
+        fetch_url_source(http, source, cache_dir).await
     } else {
         let path = sourceguard::check_file_source(source, &sourceguard::lists_dir())?;
         tokio::fs::read_to_string(&path)
             .await
             .map(|t| (t, None))
             .map_err(|e| format!("read failed: {e}"))
+    }
+}
+
+/// Downloads a URL source. An unresolved host is never requested, and it takes the
+/// same cache fallback as a failed download.
+async fn fetch_url_source(
+    http: &reqwest::Client,
+    source: &str,
+    cache_dir: &Path,
+) -> Result<(String, Option<String>), String> {
+    let cache_path = cache_path_for(cache_dir, source);
+    let failure = match sourceguard::check_url_source(source).await {
+        Ok(()) => match download(http, source).await {
+            Ok(text) => {
+                if let Err(e) = write_cache(&cache_path, &text).await {
+                    warn!(source, error = %e, "could not write list cache");
+                }
+                return Ok((text, None));
+            }
+            Err(download_err) => download_err,
+        },
+        Err(sourceguard::SourceError::Blocked(reason)) => return Err(reason),
+        Err(sourceguard::SourceError::Unresolved(reason)) => reason,
+    };
+    match tokio::fs::read_to_string(&cache_path).await {
+        Ok(cached) => Ok((
+            cached,
+            Some(format!("download failed ({failure}); using cached copy")),
+        )),
+        Err(_) => Err(format!("download failed: {failure}")),
     }
 }
 
@@ -402,6 +417,47 @@ plain.example
         let parsed = parse_list("https://example.com/x\nexample.org\n", ListFormat::Plain);
         assert!(parsed.domains.contains("example.org"));
         assert_eq!(parsed.skipped, 1);
+    }
+
+    /// Same provider setup as main and the other HTTP tests; the client panics without one.
+    fn test_client() -> reqwest::Client {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    /// A fresh cache directory holding one cached copy for `source`.
+    fn cache_dir_with(source: &str, text: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("lists-cache-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(cache_path_for(&dir, source), text).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn unresolvable_host_serves_the_cached_copy() {
+        // A DNS outage looks like an unresolvable host. The last good copy must still
+        // load, the same as it does when a download fails.
+        let source = "https://cache-test.invalid/ads.txt";
+        let dir = cache_dir_with(source, "ads.example\n");
+        let (text, note) = fetch_source(&test_client(), source, &dir).await.unwrap();
+        assert_eq!(text, "ads.example\n");
+        assert!(note.unwrap().contains("using cached copy"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[tokio::test]
+    async fn blocked_source_never_serves_the_cached_copy() {
+        // A refused address stays refused even with a cached copy. Serving the copy
+        // would still treat a forbidden source as usable.
+        let source = "http://127.0.0.1:1/x";
+        let dir = cache_dir_with(source, "ads.example\n");
+        let err = fetch_source(&test_client(), source, &dir).await.unwrap_err();
+        assert!(err.contains("127.0.0.1"));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
