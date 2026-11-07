@@ -22,6 +22,7 @@ use tracing::{error, info, warn};
 use crate::adguard::AdGuardSource;
 use crate::auth::{Sessions, Users};
 use crate::cache::DnsCache;
+use crate::ratelimit::LoginLimiter;
 use crate::config::{Config, ListConfig, ListFormat};
 use crate::db::{self, Db, ListPatch, ListRecord};
 use crate::engine::Runtime;
@@ -98,6 +99,7 @@ pub struct AppState {
     pub telemetry: Telemetry,
     pub users: Users,
     pub sessions: Sessions,
+    pub login_limits: LoginLimiter,
     pub stats_source: StatsSource,
     /// The database, when it is on and opened. `None` falls back to the
     /// in-memory query log and to lists from `config.yaml`.
@@ -161,6 +163,7 @@ impl AppState {
             telemetry: Telemetry::new(),
             users,
             sessions: Sessions::new(),
+            login_limits: LoginLimiter::default(),
             stats_source,
             db,
             db_error,

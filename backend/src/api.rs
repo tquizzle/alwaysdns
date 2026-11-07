@@ -6,11 +6,12 @@
 //! URLs or raw errors.
 
 use std::collections::{HashMap, HashSet};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{FromRequestParts, Path, Query, State};
+use axum::extract::{ConnectInfo, FromRequestParts, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header, request::Parts};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post, put};
@@ -28,6 +29,7 @@ use crate::db::{self, ListPatch, ListRecord, QueryFilter, QueryRecord};
 use crate::insights;
 use crate::models::{HistoryResponse, QueryItem, QueryLogResponse, StatsResponse, TimelinePoint, TopEntry};
 use crate::redact::{redact_client, redact_query, redact_source, redact_stats};
+use crate::ratelimit::retry_after_secs;
 use crate::rules::{is_valid_domain, normalize_rule_domain};
 use crate::telemetry::Range;
 
@@ -221,18 +223,39 @@ struct Who {
     role: Role,
 }
 
+/// `429` with `Retry-After` in whole seconds. Same JSON shape as the other errors.
+fn too_many_logins(wait: Duration) -> Response {
+    let retry = retry_after_secs(wait).to_string();
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        [(header::RETRY_AFTER, retry)],
+        Json(json!({ "error": "too many failed logins, try again later" })),
+    )
+        .into_response()
+}
+
 async fn login(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     body: Result<Json<LoginBody>, JsonRejection>,
 ) -> Result<Response, ApiError> {
     let Json(body) = body.map_err(|e| ApiError::bad_request(e.body_text()))?;
+    // One attempt at a time, so a burst cannot run argon2 before any failure is recorded.
+    let _turn = state.login_limits.take_turn().await;
+    if let Some(wait) = state.login_limits.wait_before(&body.username, peer.ip(), Instant::now()) {
+        return Ok(too_many_logins(wait));
+    }
     // Argon2 is slow by design. Run it off the async executor.
     let verifier = state.clone();
     let (user, pass) = (body.username.clone(), body.password);
     let role = tokio::task::spawn_blocking(move || verifier.users.verify(&user, &pass))
         .await
-        .map_err(|e| ApiError::internal(e.to_string()))?
-        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "invalid username or password"))?;
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let Some(role) = role else {
+        state.login_limits.record_failure(&body.username, peer.ip(), Instant::now());
+        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid username or password"));
+    };
+    state.login_limits.record_success(&body.username);
 
     let token = state.sessions.create(&body.username, role);
     let cookie = session_cookie(&state, &token, 12 * 60 * 60);
@@ -1871,6 +1894,85 @@ async fn export_settings(session: Session, State(state): State<Arc<AppState>>) -
         yaml,
     )
         .into_response())
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::*;
+    use crate::app::Options;
+    use crate::auth::{AdminCredentials, Users, hash_password};
+
+    const PEER: &str = "192.0.2.7:5555";
+
+    /// Builds real application state with one admin, and no database or lists to load.
+    async fn state_with_admin(dir: &std::path::Path) -> Arc<AppState> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let config = dir.join("config.yaml");
+        let yaml = "bootstrap: [\"9.9.9.10\"]\nresolvers:\n  Quad9: \"https://dns10.quad9.net/dns-query\"\nupstream_groups:\n  default: [Quad9]\n";
+        std::fs::write(&config, yaml).unwrap();
+        let admin = AdminCredentials {
+            username: "admin".into(),
+            password_hash: hash_password("right-password").unwrap(),
+            generated_password: None,
+        };
+        let users = Users::from_lookup(|_| None, admin).unwrap();
+        let opts = Options {
+            config_path: config,
+            cache_dir: dir.join("cache"),
+            static_dir: dir.join("static"),
+            cookie_secure: false,
+            db_path: None,
+            geoip_db: None,
+        };
+        AppState::new(reqwest::Client::new(), opts, users, StatsSource::Native)
+            .await
+            .unwrap()
+    }
+
+    async fn attempt(state: &Arc<AppState>, user: &str, pass: &str) -> Response {
+        let peer: SocketAddr = PEER.parse().unwrap();
+        let body = LoginBody { username: user.into(), password: pass.into() };
+        login(State(state.clone()), ConnectInfo(peer), Ok(Json(body)))
+            .await
+            .unwrap_or_else(IntoResponse::into_response)
+    }
+
+    fn fresh_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn a_locked_login_is_refused_even_with_the_right_password() {
+        // A lock must hold for every guess. If the right password got through while locked,
+        // the lock would only slow guessing down and never stop it.
+        let dir = fresh_dir("dnsui-login-lock");
+        let state = state_with_admin(&dir).await;
+        for _ in 0..6 {
+            assert_eq!(attempt(&state, "admin", "wrong").await.status(), StatusCode::UNAUTHORIZED);
+        }
+        let locked = attempt(&state, "admin", "right-password").await;
+        assert_eq!(locked.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(locked.headers().get(header::RETRY_AFTER).unwrap().to_str().unwrap(), "30");
+        let body = axum::body::to_bytes(locked.into_body(), 1024).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("\"error\""));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn unknown_usernames_are_locked_exactly_like_real_ones() {
+        // Otherwise a lock on a real name and on a made-up name would differ, and the
+        // difference would reveal which usernames exist.
+        let dir = fresh_dir("dnsui-login-unknown");
+        let state = state_with_admin(&dir).await;
+        for _ in 0..6 {
+            assert_eq!(attempt(&state, "nobody", "x").await.status(), StatusCode::UNAUTHORIZED);
+        }
+        assert_eq!(attempt(&state, "nobody", "x").await.status(), StatusCode::TOO_MANY_REQUESTS);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

@@ -20,11 +20,13 @@ mod lists;
 mod models;
 mod recorder;
 mod redact;
+mod ratelimit;
 mod rules;
 mod services;
 mod telemetry;
 mod upstream;
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -250,7 +252,7 @@ async fn serve() -> Result<()> {
         .await
         .with_context(|| format!("binding HTTP {}", listen.http))?;
     info!(addr = %listen.http, static_dir = %state.static_dir.display(), "HTTP listening");
-    axum::serve(http_listener, app)
+    axum::serve(http_listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async {
             shutdown_signal().await;
             info!("shutting down");
