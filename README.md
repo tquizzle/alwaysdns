@@ -2,6 +2,19 @@
 
 A self-hosted filtering DNS resolver with a web dashboard, built for a homelab. The backend is Rust (axum, tokio, SQLite) and the frontend is React 19. It runs in Docker Compose from `deploy/`. See [PRD.md](PRD.md) for the full spec and [deploy/README.md](deploy/README.md) for setup.
 
+## In use
+
+Measured on the author's home network from 3 to 8 November 2026, with 4 block lists active. One household and one resolver, not a benchmark.
+
+| Metric | Value |
+| --- | --- |
+| Queries answered | 240,444 |
+| Blocked | 56,050 (23.3%) |
+| Served from cache | 4.5% |
+| Average answer time | 85.49 ms (all queries, cache hits included) |
+
+The project itself: 155 backend tests, 76 frontend tests, 261 Rust crates with no known vulnerabilities in `cargo audit`.
+
 ## Contributing
 
 Contributions are welcome: bug reports, ideas, docs fixes and code. Read [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up, run the checks and send a change.
