@@ -22,6 +22,7 @@ mod recorder;
 mod redact;
 mod ratelimit;
 mod rules;
+mod safesearch;
 mod services;
 mod sourceguard;
 mod telemetry;
