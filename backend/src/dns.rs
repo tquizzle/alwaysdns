@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use hickory_proto::op::{Edns, Header, HeaderCounts, Metadata, OpCode, ResponseCode};
-use hickory_proto::rr::rdata::{A, AAAA};
+use hickory_proto::rr::rdata::{A, AAAA, CNAME};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_server::net::runtime::Time;
 use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
@@ -50,6 +50,10 @@ impl DnsHandler {
                 result: "rewritten",
                 upstream: "local".to_string(),
             },
+            Verdict::SafeSearch(found) => {
+                self.safe_search_outcome(rt, &decision.group, name, qtype, found.target)
+                    .await
+            }
             Verdict::Blocked => Outcome {
                 answers: Vec::new(),
                 rcode: ResponseCode::NXDomain,
@@ -89,6 +93,55 @@ impl DnsHandler {
                     }
                 }
             }
+        }
+    }
+
+    /// Answers a safe-search name as an alias of `target`, looked up through the
+    /// client's upstream group and the shared cache.
+    async fn safe_search_outcome(
+        &self,
+        rt: &Runtime,
+        group: &str,
+        name: &str,
+        qtype: RecordType,
+        target: &str,
+    ) -> Outcome {
+        // Other types (HTTPS, SVCB and so on) get an empty answer. Forwarding them
+        // would hand back the provider's real, unfiltered records.
+        if !matches!(qtype, RecordType::A | RecordType::AAAA) {
+            return Outcome {
+                answers: Vec::new(),
+                rcode: ResponseCode::NoError,
+                result: "rewritten",
+                upstream: "local".to_string(),
+            };
+        }
+        let key = make_key(group, target, qtype);
+        let (found, rcode, upstream) = if let Some(hit) = self.state.cache.get(&key) {
+            (hit.answers, hit.rcode, "cache".to_string())
+        } else {
+            let servers = servers_for_group(rt, group);
+            match self.state.upstreams.forward(&servers, target, qtype).await {
+                Ok(ok) => {
+                    self.state.cache.put(key, &ok.answers, ok.rcode);
+                    (ok.answers, ok.rcode, ok.upstream)
+                }
+                Err(err) => {
+                    warn!(%name, %target, error = %err, "safe search target lookup failed");
+                    return Outcome {
+                        answers: Vec::new(),
+                        rcode: ResponseCode::ServFail,
+                        result: "error",
+                        upstream: "-".to_string(),
+                    };
+                }
+            }
+        };
+        Outcome {
+            answers: safe_search_answers(name, target, found, rcode),
+            rcode,
+            result: "rewritten",
+            upstream,
         }
     }
 
@@ -238,4 +291,72 @@ fn servers_for_group(rt: &Runtime, group: &str) -> Vec<String> {
         }
     }
     servers
+}
+
+/// The answer for a safe-search name: a CNAME to `target`, then the target's own
+/// records. If the target lookup failed, there are no answers and the caller
+/// passes the same response code on, so the client sees the real failure.
+fn safe_search_answers(
+    name: &str,
+    target: &str,
+    found: Vec<Record>,
+    rcode: ResponseCode,
+) -> Vec<Record> {
+    if rcode != ResponseCode::NoError {
+        return Vec::new();
+    }
+    let (Ok(owner), Ok(host)) = (
+        Name::from_ascii(format!("{name}.")),
+        Name::from_ascii(format!("{target}.")),
+    ) else {
+        return Vec::new();
+    };
+    let ttl = found.iter().map(|r| r.ttl).min().unwrap_or(REWRITE_TTL);
+    let mut answers = Vec::with_capacity(found.len() + 1);
+    answers.push(Record::from_rdata(owner, ttl, RData::CNAME(CNAME(host))));
+    answers.extend(found);
+    answers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    const TARGET: &str = "forcesafesearch.google.com";
+
+    fn a_record(ttl: u32, last: u8) -> Record {
+        let owner = Name::from_ascii(format!("{TARGET}.")).unwrap();
+        Record::from_rdata(owner, ttl, RData::A(A(Ipv4Addr::new(203, 0, 113, last))))
+    }
+
+    #[test]
+    fn safe_search_answer_is_a_cname_followed_by_the_target_records() {
+        let out = safe_search_answers("www.google.com", TARGET, vec![a_record(120, 9)], ResponseCode::NoError);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].name.to_ascii(), "www.google.com.");
+        assert!(matches!(&out[0].data, RData::CNAME(c) if c.0.to_ascii() == format!("{TARGET}.")));
+        assert!(matches!(out[1].data, RData::A(_)));
+    }
+
+    #[test]
+    fn the_alias_ttl_is_the_shortest_target_ttl() {
+        let found = vec![a_record(300, 1), a_record(45, 2)];
+        let out = safe_search_answers("www.google.com", TARGET, found, ResponseCode::NoError);
+        assert_eq!(out[0].ttl, 45);
+    }
+
+    #[test]
+    fn a_target_with_no_records_still_answers_with_the_alias() {
+        // An AAAA query for a host with no IPv6 address: alias only, NOERROR, no leak.
+        let out = safe_search_answers("www.google.com", TARGET, Vec::new(), ResponseCode::NoError);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ttl, REWRITE_TTL);
+    }
+
+    #[test]
+    fn a_failed_target_lookup_returns_no_answers() {
+        let out = safe_search_answers("www.google.com", TARGET, vec![a_record(60, 3)], ResponseCode::NXDomain);
+        assert!(out.is_empty());
+    }
 }

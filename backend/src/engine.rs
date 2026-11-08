@@ -11,6 +11,7 @@ use tracing::warn;
 use crate::config::{Config, parse_client_cidrs};
 use crate::lists::ListData;
 use crate::rules::{CidrTable, DomainSet, RewriteTable, match_suffix, normalize_rule_domain};
+use crate::safesearch::{self, SafeSearch};
 use crate::services::Catalogue;
 
 /// Outcome of the policy checks, before any answer is produced.
@@ -18,6 +19,8 @@ use crate::services::Catalogue;
 pub enum Verdict {
     /// A rewrite applies. Carries the local answer.
     Rewrite(IpAddr),
+    /// Safe search applies. The name is answered as an alias of the provider's safe host.
+    SafeSearch(SafeSearch),
     /// A block rule applies and no allow rule overrides it.
     Blocked,
     /// A block rule would apply, but an allow rule overrides it.
@@ -44,6 +47,8 @@ pub struct RuntimeClient {
     pub block_lists: Vec<(String, Arc<ListData>)>,
     pub allow: DomainSet,
     pub block: DomainSet,
+    /// Safe search for this client, after applying the global default.
+    pub safe_search: bool,
 }
 
 pub struct Runtime {
@@ -58,6 +63,8 @@ pub struct Runtime {
     pub global_allow_lists: Vec<(String, Arc<ListData>)>,
     global_block: DomainSet,
     rewrites: RewriteTable,
+    /// Safe search for clients that match no CIDR.
+    safe_search: bool,
     /// Apps clients can block. Empty until `with_services` supplies the catalogue.
     pub catalogue: Arc<Catalogue>,
 }
@@ -108,6 +115,7 @@ impl Runtime {
                 block_lists: list_refs(&client.block_lists, &lists),
                 allow: domain_set(&client.allow_domains),
                 block: domain_set(&client.block_domains),
+                safe_search: client.safe_search.unwrap_or(config.safe_search),
             });
         }
 
@@ -131,6 +139,7 @@ impl Runtime {
             global_allow_lists,
             global_block: domain_set(&config.block_domains),
             rewrites: RewriteTable::build(&rewrite_rules)?,
+            safe_search: config.safe_search,
             catalogue: Arc::new(Catalogue::default()),
             lists,
             config,
@@ -203,12 +212,26 @@ impl Runtime {
             (Some(block), None) => (Verdict::Blocked, block),
             (None, _) => (Verdict::Pass, String::new()),
         };
+        // A block still wins. An allow rule does not switch safe search off, the same
+        // as it does not stop a rewrite.
+        let (verdict, rule) = match self.safe_search_for(idx, name) {
+            Some(found) if verdict != Verdict::Blocked => {
+                (Verdict::SafeSearch(found), format!("safesearch:{}", found.provider))
+            }
+            _ => (verdict, rule),
+        };
         Decision {
             verdict,
             rule,
             client,
             group,
         }
+    }
+
+    /// The safe-search redirect for `name`, when it is on for this client.
+    fn safe_search_for(&self, idx: Option<usize>, name: &str) -> Option<SafeSearch> {
+        let on = idx.map_or(self.safe_search, |i| self.clients[i].safe_search);
+        if on { safesearch::lookup(name) } else { None }
     }
 
     fn block_rule(&self, idx: Option<usize>, name: &str) -> Option<String> {
@@ -437,5 +460,113 @@ clients:
         let rt = Runtime::build_with(config, BTreeMap::new(), Vec::new()).unwrap();
         let d = rt.decide(ip("198.51.100.9"), "pixel.doubleclick.net");
         assert_eq!(d.verdict, Verdict::Pass);
+    }
+
+    const SAFE_CFG: &str = r#"
+bootstrap: ["9.9.9.10"]
+upstream_groups:
+  default: ["https://dns10.quad9.net/dns-query"]
+clients:
+  - name: Kid
+    cidrs: ["192.0.2.20/32"]
+  - name: Parent
+    cidrs: ["192.0.2.21/32"]
+    safe_search: false
+  - name: Guest
+    cidrs: ["192.0.2.22/32"]
+    safe_search: true
+"#;
+
+    fn safe_runtime(tail: &str) -> Runtime {
+        let yaml = format!("{SAFE_CFG}{tail}");
+        Runtime::build_with(Config::parse_yaml(&yaml).unwrap(), BTreeMap::new(), Vec::new()).unwrap()
+    }
+
+    fn is_safe_search(rt: &Runtime, client: &str, name: &str) -> bool {
+        matches!(rt.decide(ip(client), name).verdict, Verdict::SafeSearch(_))
+    }
+
+    #[test]
+    fn safe_search_is_off_unless_someone_turns_it_on() {
+        let rt = safe_runtime("");
+        assert!(!is_safe_search(&rt, "203.0.113.9", "www.google.com"));
+        assert!(!is_safe_search(&rt, "192.0.2.20", "www.google.com"));
+    }
+
+    #[test]
+    fn global_on_covers_unknown_clients_and_clients_that_inherit() {
+        let rt = safe_runtime("safe_search: true\n");
+        let d = rt.decide(ip("203.0.113.9"), "www.google.com");
+        assert!(matches!(d.verdict, Verdict::SafeSearch(_)));
+        assert_eq!(d.rule, "safesearch:google");
+        assert!(is_safe_search(&rt, "192.0.2.20", "www.youtube.com"));
+        // Only the search front doors are covered. Everything else passes untouched.
+        assert!(!is_safe_search(&rt, "192.0.2.20", "mail.google.com"));
+    }
+
+    #[test]
+    fn a_client_set_to_off_beats_the_global_on() {
+        let rt = safe_runtime("safe_search: true\n");
+        assert!(!is_safe_search(&rt, "192.0.2.21", "www.google.com"));
+    }
+
+    #[test]
+    fn a_client_set_to_on_beats_the_global_off() {
+        let rt = safe_runtime("safe_search: false\n");
+        assert!(is_safe_search(&rt, "192.0.2.22", "www.bing.com"));
+        assert!(!is_safe_search(&rt, "192.0.2.20", "www.bing.com"));
+        assert!(!is_safe_search(&rt, "203.0.113.9", "www.bing.com"));
+    }
+
+    #[test]
+    fn a_block_rule_wins_over_safe_search() {
+        let rt = safe_runtime("safe_search: true\nblock_domains: [\"www.bing.com\"]\n");
+        assert_eq!(rt.decide(ip("192.0.2.20"), "www.bing.com").verdict, Verdict::Blocked);
+    }
+
+    #[test]
+    fn an_allow_rule_does_not_switch_safe_search_off() {
+        let yaml = r#"
+bootstrap: ["9.9.9.10"]
+upstream_groups:
+  default: ["https://dns10.quad9.net/dns-query"]
+clients:
+  - name: Kid
+    cidrs: ["192.0.2.20/32"]
+    block_lists: ["ads"]
+    allow_domains: ["www.youtube.com"]
+lists:
+  ads:
+    sources: ["https://example.com/hosts.txt"]
+safe_search: true
+"#;
+        let mut lists = BTreeMap::new();
+        lists.insert("ads".to_string(), list("ads", &["www.youtube.com"]));
+        let rt = Runtime::build_with(Config::parse_yaml(yaml).unwrap(), lists, Vec::new()).unwrap();
+        // The allow rule beats the list, and safe search still applies on top.
+        assert!(is_safe_search(&rt, "192.0.2.20", "www.youtube.com"));
+    }
+
+    #[test]
+    fn a_local_rewrite_wins_over_safe_search() {
+        let rt = safe_runtime(
+            "safe_search: true\nrewrites:\n  - domain: \"www.google.com\"\n    answer: \"203.0.113.5\"\n",
+        );
+        assert!(matches!(rt.decide(ip("192.0.2.20"), "www.google.com").verdict, Verdict::Rewrite(_)));
+    }
+
+    #[test]
+    fn safe_search_settings_survive_a_yaml_round_trip() {
+        let config = Config::parse_yaml(&format!("{SAFE_CFG}safe_search: true\n")).unwrap();
+        let again = Config::parse_yaml(&config.to_yaml().unwrap()).unwrap();
+        assert!(again.safe_search);
+        let overrides: Vec<_> = again.clients.iter().map(|c| c.safe_search).collect();
+        assert_eq!(overrides, vec![None, Some(false), Some(true)]);
+    }
+
+    #[test]
+    fn existing_configs_do_not_gain_a_safe_search_key_when_exported() {
+        let yaml = Config::parse_yaml(CFG).unwrap().to_yaml().unwrap();
+        assert!(!yaml.contains("safe_search"), "{yaml}");
     }
 }

@@ -791,6 +791,8 @@ struct ClientView {
     block_lists: Vec<String>,
     /// Apps blocked for this client, by catalogue id.
     blocked_services: Vec<String>,
+    /// This client's own safe-search setting. `None` follows the global setting.
+    safe_search: Option<bool>,
     /// Queries in the last hour.
     queries: u64,
     /// Blocked queries in the last hour.
@@ -821,6 +823,7 @@ async fn clients(
                     .unwrap_or_else(|| rt.config.default_upstream_group.clone()),
                 block_lists: c.block_lists.clone(),
                 blocked_services: c.blocked_services.clone(),
+                safe_search: c.safe_search,
                 queries,
                 blocked,
             }
@@ -1414,6 +1417,8 @@ struct ClientBody {
     allow_domains: Vec<String>,
     block_domains: Vec<String>,
     blocked_services: Vec<String>,
+    /// `None` follows the global setting.
+    safe_search: Option<bool>,
 }
 
 /// An app id from the catalogue: lowercase letters, digits and underscores.
@@ -1455,6 +1460,7 @@ fn client_from_body(
         allow_domains: clean_list(body.allow_domains),
         block_domains: clean_list(body.block_domains),
         blocked_services,
+        safe_search: body.safe_search,
     })
 }
 
