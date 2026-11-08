@@ -208,6 +208,8 @@ export interface Client {
   block_lists: string[];
   /** Apps blocked for this client, by catalogue id. */
   blocked_services: string[];
+  /** This client's own safe-search setting. null follows the global switch. */
+  safe_search: boolean | null;
   queries: number;
   blocked: number;
 }
@@ -247,6 +249,8 @@ export interface ClientUpdateBody {
   allow_domains: string[];
   block_domains: string[];
   blocked_services: string[];
+  /** true or false overrides the global switch for this client. null follows it. */
+  safe_search: boolean | null;
 }
 
 /** A local answer: a name, or `*.suffix`, that is answered with this address instead of asking an upstream. */
@@ -268,6 +272,8 @@ export interface Settings {
   bootstrap: string[];
   default_upstream_group: string;
   retention: Retention;
+  /** Force safe search for every client that does not override it. */
+  safe_search: boolean;
   listen: { dns: string; http: string };
   groups: string[];
 }

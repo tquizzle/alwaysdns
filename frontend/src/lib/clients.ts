@@ -19,7 +19,20 @@ export function clientBody(client: Client): ClientUpdateBody {
     allow_domains: client.allow_domains ?? [],
     block_domains: client.block_domains ?? [],
     blocked_services: client.blocked_services,
+    safe_search: client.safe_search,
   };
+}
+
+/** What the client dialog's safe-search menu offers. `null` on the wire means inherit. */
+export type SafeSearchChoice = 'inherit' | 'on' | 'off';
+
+export function toSafeSearchChoice(value: boolean | null): SafeSearchChoice {
+  if (value === null) return 'inherit';
+  return value ? 'on' : 'off';
+}
+
+export function fromSafeSearchChoice(choice: SafeSearchChoice): boolean | null {
+  return choice === 'inherit' ? null : choice === 'on';
 }
 
 const CIDR_PATTERN = /^[0-9a-fA-F:.]+\/\d{1,3}$/;

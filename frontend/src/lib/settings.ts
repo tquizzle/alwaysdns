@@ -9,6 +9,7 @@ export function settingsBody(current: Settings, patch: Partial<SettingsBody>): S
     bootstrap: current.bootstrap,
     default_upstream_group: current.default_upstream_group,
     retention: current.retention,
+    safe_search: current.safe_search,
     ...patch,
   };
 }
