@@ -5,7 +5,7 @@ Thanks for wanting to help. AlwaysDNS is a self-hosted, filtering DNS resolver w
 ## Ways to help
 
 - **Report a bug.** Say what you did, what you expected and what happened. Include the version shown in the top bar and the relevant lines from `docker compose logs dnsui`.
-- **Suggest an idea.** Describe the problem first, then the change you have in mind. See the "Still open" section of [PRD.md](PRD.md) for what is already planned, such as forced safe search.
+- **Suggest an idea.** Describe the problem first, then the change you have in mind. See the "Still open" section of [PRD.md](PRD.md) for what is already planned. A DHCP server and encrypted DNS (DoH or DoT) for clients are deliberately not planned.
 - **Improve the docs.** If a step in [deploy/README.md](deploy/README.md) did not work for you, that is a bug worth reporting or fixing.
 - **Test on your network.** Different routers, upstream resolvers and phones find problems one machine cannot.
 - **Send code.** See below.

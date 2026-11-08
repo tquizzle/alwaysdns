@@ -230,6 +230,35 @@ export function RetentionPanel({ settings }: { settings: Settings }) {
   );
 }
 
+/** Forces safe search for every client that does not set its own. */
+export function SafeSearchPanel({ settings }: { settings: Settings }) {
+  const { save, message, busy } = useSectionSave(settings);
+  const [on, setOn] = useState(settings.safe_search);
+
+  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    save({ safe_search: on }, on ? 'Safe search is on.' : 'Safe search is off.');
+  };
+
+  return (
+    <Panel
+      title="Safe search"
+      subtitle="Makes Google, Bing, DuckDuckGo and YouTube return filtered results. A client can override this on the Clients page."
+    >
+      <form className="settings-form" onSubmit={onSubmit} noValidate>
+        <label className="checkbox">
+          <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+          <span>Force safe search for every client that does not set its own</span>
+        </label>
+        <span className="muted small">
+          It does not stop a device that uses its own encrypted DNS, and it only covers those four providers.
+        </span>
+        <SaveRow busy={busy} message={message} />
+      </form>
+    </Panel>
+  );
+}
+
 /** Downloads every setting as one YAML file, to keep a copy or move to another install. */
 export function ExportPanel() {
   const [message, setMessage] = useState<Message | null>(null);

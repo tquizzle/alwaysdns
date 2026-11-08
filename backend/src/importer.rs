@@ -154,6 +154,7 @@ pub fn import_adguard(text: &str) -> Result<(Config, ImportReport)> {
             allow_domains: Vec::new(),
             block_domains: Vec::new(),
             blocked_services: Vec::new(),
+            safe_search: None,
         });
     }
     report.clients = clients.len();
@@ -211,6 +212,7 @@ pub fn import_adguard(text: &str) -> Result<(Config, ImportReport)> {
         allow_domains: global_allow,
         block_domains: global_block,
         default_upstream_group: DEFAULT_GROUP.to_string(),
+        safe_search: false,
     };
     config.migrate_legacy_upstreams();
     config

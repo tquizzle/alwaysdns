@@ -6,6 +6,7 @@ import {
   LocalAnswersPanel,
   ResolvingPanel,
   RetentionPanel,
+  SafeSearchPanel,
 } from '../components/SettingsPanels';
 import { ErrorState, LoadingState } from '../components/States';
 
@@ -35,6 +36,7 @@ export function SettingsPage() {
             <DomainsPanel settings={settings.data} field="block_domains" />
           </div>
           <ResolvingPanel settings={settings.data} />
+          <SafeSearchPanel settings={settings.data} />
           <RetentionPanel settings={settings.data} />
           <ListenersPanel settings={settings.data} />
           <ExportPanel />

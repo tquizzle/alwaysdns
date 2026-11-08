@@ -791,6 +791,8 @@ struct ClientView {
     block_lists: Vec<String>,
     /// Apps blocked for this client, by catalogue id.
     blocked_services: Vec<String>,
+    /// This client's own safe-search setting. `None` follows the global setting.
+    safe_search: Option<bool>,
     /// Queries in the last hour.
     queries: u64,
     /// Blocked queries in the last hour.
@@ -821,6 +823,7 @@ async fn clients(
                     .unwrap_or_else(|| rt.config.default_upstream_group.clone()),
                 block_lists: c.block_lists.clone(),
                 blocked_services: c.blocked_services.clone(),
+                safe_search: c.safe_search,
                 queries,
                 blocked,
             }
@@ -1414,6 +1417,8 @@ struct ClientBody {
     allow_domains: Vec<String>,
     block_domains: Vec<String>,
     blocked_services: Vec<String>,
+    /// `None` follows the global setting.
+    safe_search: Option<bool>,
 }
 
 /// An app id from the catalogue: lowercase letters, digits and underscores.
@@ -1455,6 +1460,7 @@ fn client_from_body(
         allow_domains: clean_list(body.allow_domains),
         block_domains: clean_list(body.block_domains),
         blocked_services,
+        safe_search: body.safe_search,
     })
 }
 
@@ -1800,6 +1806,8 @@ struct SettingsBody {
     bootstrap: Vec<String>,
     default_upstream_group: String,
     retention: Retention,
+    /// Force safe search for every client that does not override it.
+    safe_search: bool,
 }
 
 /// Trims, normalizes and de-duplicates a domain list, rejecting anything that is not a hostname.
@@ -1842,6 +1850,7 @@ fn settings_config(body: SettingsBody, mut config: Config) -> Result<Config, Api
     config.bootstrap = bootstrap;
     config.default_upstream_group = body.default_upstream_group.trim().to_string();
     config.retention = body.retention;
+    config.safe_search = body.safe_search;
     config
         .validate()
         .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
@@ -1856,6 +1865,7 @@ fn settings_json(config: &Config) -> Value {
         "bootstrap": config.bootstrap,
         "default_upstream_group": config.default_upstream_group,
         "retention": config.retention,
+        "safe_search": config.safe_search,
         "listen": config.listen,
         "groups": config.upstream_groups.keys().collect::<Vec<_>>(),
     })
@@ -2066,7 +2076,39 @@ mod settings_tests {
             bootstrap: vec!["9.9.9.10".into(), "9.9.9.10".into(), "2620:fe::10".into()],
             default_upstream_group: "kids".into(),
             retention: Retention { query_days: 14, stats_days: 90 },
+            safe_search: true,
         }
+    }
+
+    #[test]
+    fn a_client_save_keeps_inherit_off_and_on_apart() {
+        for want in [None, Some(false), Some(true)] {
+            let body = ClientBody {
+                name: None,
+                cidrs: Vec::new(),
+                upstream_group: "default".into(),
+                block_lists: Vec::new(),
+                allow_domains: Vec::new(),
+                block_domains: Vec::new(),
+                blocked_services: Vec::new(),
+                safe_search: want,
+            };
+            let client = client_from_body(body, "Kid".into(), &HashSet::new(), &base()).unwrap();
+            assert_eq!(client.safe_search, want);
+        }
+    }
+
+    #[test]
+    fn the_safe_search_switch_is_saved_and_can_be_turned_back_off() {
+        let on = settings_config(body(), base()).unwrap();
+        assert!(on.safe_search);
+        assert_eq!(settings_json(&on)["safe_search"], true);
+
+        let mut off_body = body();
+        off_body.safe_search = false;
+        let off = settings_config(off_body, on).unwrap();
+        assert!(!off.safe_search, "a save with the switch off must clear it");
+        assert_eq!(settings_json(&off)["safe_search"], false);
     }
 
     #[test]

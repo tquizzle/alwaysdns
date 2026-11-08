@@ -16,6 +16,7 @@ const current: Settings = {
   bootstrap: ['9.9.9.10'],
   default_upstream_group: 'default',
   retention: { query_days: 30, stats_days: 365 },
+  safe_search: false,
   listen: { dns: '0.0.0.0:53', http: '0.0.0.0:8080' },
   groups: ['default'],
 };
@@ -27,6 +28,16 @@ describe('settingsBody', () => {
     expect(body.rewrites).toEqual(current.rewrites);
     expect(body.allow_domains).toEqual(current.allow_domains);
     expect(body.retention).toEqual(current.retention);
+  });
+
+  it('keeps safe search as it is when another section is saved, so saving retention cannot switch it off', () => {
+    const on: Settings = { ...current, safe_search: true };
+    expect(settingsBody(on, { retention: { query_days: 7, stats_days: 30 } }).safe_search).toBe(true);
+  });
+
+  it('lets the safe search panel switch it on and off', () => {
+    expect(settingsBody(current, { safe_search: true }).safe_search).toBe(true);
+    expect(settingsBody({ ...current, safe_search: true }, { safe_search: false }).safe_search).toBe(false);
   });
 
   it('never sends the read-only listeners or the group names back', () => {

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useCreateClient, useCreateList, useUpdateClient } from '../api/queries';
 import type { Client, ClientUpdateBody } from '../api/types';
-import { cidrError, linesToList } from '../lib/clients';
+import { cidrError, fromSafeSearchChoice, linesToList, toSafeSearchChoice, type SafeSearchChoice } from '../lib/clients';
 import { ADULT_LIST } from '../lib/lists';
 import { AppPicker } from './AppPicker';
 import { Modal } from './Modal';
@@ -33,6 +33,7 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
   const [allow, setAllow] = useState((client?.allow_domains ?? []).join('\n'));
   const [block, setBlock] = useState((client?.block_domains ?? []).join('\n'));
   const [apps, setApps] = useState<string[]>(client?.blocked_services ?? []);
+  const [safeSearch, setSafeSearch] = useState<SafeSearchChoice>(toSafeSearchChoice(client?.safe_search ?? null));
   const [error, setError] = useState<string | null>(null);
 
   const toggleApp = (id: string) => {
@@ -80,6 +81,7 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
       allow_domains: linesToList(allow),
       block_domains: linesToList(block),
       blocked_services: apps,
+      safe_search: fromSafeSearchChoice(safeSearch),
     };
 
     if (client) {
@@ -170,6 +172,23 @@ export function ClientDialog({ client, groupNames, defaultGroup, blockListNames,
               ))}
             </div>
           )}
+        </div>
+
+        <div className="field">
+          <span id="client-safe-search-label">Safe search</span>
+          <select
+            aria-labelledby="client-safe-search-label"
+            value={safeSearch}
+            onChange={(e) => setSafeSearch(e.target.value as SafeSearchChoice)}
+          >
+            <option value="inherit">Follow the global setting</option>
+            <option value="on">On for this client</option>
+            <option value="off">Off for this client</option>
+          </select>
+          <span className="muted small">
+            Google, Bing, DuckDuckGo and YouTube return filtered results. A device that uses its own encrypted DNS can
+            bypass it.
+          </span>
         </div>
 
         <AppPicker selected={apps} onToggle={toggleApp} />

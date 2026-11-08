@@ -57,10 +57,17 @@ pub struct Config {
     pub block_domains: Vec<String>,
     #[serde(default = "default_group_name")]
     pub default_upstream_group: String,
+    /// Force safe search for every client that does not override it (see `safesearch.rs`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub safe_search: bool,
 }
 
 fn default_group_name() -> String {
     DEFAULT_GROUP.to_string()
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,6 +142,9 @@ pub struct ClientConfig {
     /// Apps blocked for this client, by catalogue id (see `services.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked_services: Vec<String>,
+    /// Safe search for this client. `None` follows the global setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safe_search: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
