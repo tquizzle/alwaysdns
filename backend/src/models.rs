@@ -61,7 +61,10 @@ pub struct UpstreamStat {
     pub ok: bool,
     /// Average of live client queries, in ms. Zero when none have been answered.
     pub avg_ms: f64,
+    /// Failed live client queries since the server started. Probe failures are not included.
     pub errors: u64,
+    /// Failed background probes since the server started.
+    pub probe_errors: u64,
     /// Median round trip of the recent probes, in ms. None before the first probe.
     pub probe_p50_ms: Option<f64>,
     /// 95th percentile of the recent probes, in ms.
