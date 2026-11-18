@@ -29,7 +29,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm audit --audit-level=high
+      # --omit=dev: GHSA-fc5q-39xc-vjpf (picomatch ReDoS, no patched version) is
+      # reachable only through devDependencies (vite/vitest toolchain), never shipped.
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
