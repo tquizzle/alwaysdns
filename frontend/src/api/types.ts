@@ -38,7 +38,10 @@ export interface UpstreamStatus {
   ok: boolean;
   /** Average of live client queries, in ms. */
   avg_ms: number;
+  /** Failed live client queries since the server started. */
   errors: number;
+  /** Failed background probes since the server started. */
+  probe_errors?: number;
   /** Median and 95th percentile of the recent probes, in ms. Null before the first probe. */
   probe_p50_ms?: number | null;
   probe_p95_ms?: number | null;

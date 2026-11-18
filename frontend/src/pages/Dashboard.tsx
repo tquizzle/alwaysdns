@@ -272,6 +272,11 @@ function UpstreamCard({ upstream }: { upstream: UpstreamStatus }) {
       </div>
       <div className="upstream-foot">
         <span className={upstream.errors > 0 ? 'text-red' : 'muted'}>{formatInt(upstream.errors)} errors</span>
+        {(upstream.probe_errors ?? 0) > 0 && (
+          <span className="muted" title="Failed background health probes, not client queries">
+            {' '}· {formatInt(upstream.probe_errors ?? 0)} probe failures
+          </span>
+        )}
         {upstream.probe_p95_ms != null && (
           <span className="muted"> · p95 {Math.round(upstream.probe_p95_ms)} ms</span>
         )}

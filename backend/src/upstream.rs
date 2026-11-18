@@ -54,8 +54,10 @@ pub struct ForwardOk {
 struct ServerStats {
     /// Live client queries only. Probes are not counted here.
     successes: u64,
-    /// Live and probe failures together.
+    /// Live client query failures only.
     errors: u64,
+    /// Background probe failures only.
+    probe_errors: u64,
     /// Live client queries only.
     sum_ms: f64,
     /// Reset by any success, live or probe.
@@ -145,6 +147,7 @@ impl UpstreamManager {
                         0.0
                     },
                     errors: s.errors,
+                    probe_errors: s.probe_errors,
                     probe_p50_ms: percentile(&s.probe_ms, 50.0),
                     probe_p95_ms: percentile(&s.probe_ms, 95.0),
                     probe_samples: s.probe_ms.len() as u32,
@@ -308,7 +311,7 @@ impl UpstreamManager {
                 }
                 entry.probe_ms.push_back(elapsed.as_secs_f64() * 1000.0);
             } else {
-                entry.errors += 1;
+                entry.probe_errors += 1;
             }
         }
     }
@@ -361,6 +364,19 @@ mod tests {
         assert!(s.ok);
         assert_eq!(s.probe_samples, 1);
         assert_eq!(s.probe_p50_ms, Some(12.0));
+    }
+
+    #[test]
+    fn probe_failures_are_not_counted_as_live_errors() {
+        let m = UpstreamManager::new();
+        let url = "quic://a.example:853".to_string();
+        let urls = vec![url.clone()];
+        m.note_probe(&url, false, Duration::ZERO);
+        m.note_probe(&url, false, Duration::ZERO);
+        m.note(&url, false, Duration::ZERO);
+        let s = &m.snapshot(&urls)[0];
+        assert_eq!(s.errors, 1);
+        assert_eq!(s.probe_errors, 2);
     }
 
     #[test]

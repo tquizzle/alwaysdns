@@ -239,6 +239,7 @@ fn upstream_stats(v: &Value) -> Vec<UpstreamStat> {
                     ok: true,
                     avg_ms: avg.get(name).copied().unwrap_or(0.0).round(),
                     errors: 0,
+                    probe_errors: 0,
                     probe_p50_ms: None,
                     probe_p95_ms: None,
                     probe_samples: 0,
