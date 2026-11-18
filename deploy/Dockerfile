@@ -11,7 +11,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: backend (Rust) ---------------------------------------------
-FROM rust:1.97-alpine AS backend
+FROM rust:1.100-alpine AS backend
 RUN apk add --no-cache musl-dev gcc
 WORKDIR /src/backend
 
