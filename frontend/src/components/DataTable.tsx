@@ -1,11 +1,11 @@
+import { flexRender } from '@tanstack/react-table';
 import {
-  flexRender,
   getCoreRowModel,
   getSortedRowModel,
-  useReactTable,
-  type ColumnDef,
-  type SortingState,
-} from '@tanstack/react-table';
+  useLegacyTable as useReactTable,
+  type LegacyColumnDef,
+} from '@tanstack/react-table/legacy';
+import { type RowData, type SortingState } from '@tanstack/table-core';
 import { useState } from 'react';
 
 export interface PaginationState {
@@ -15,11 +15,9 @@ export interface PaginationState {
   pageCount: number;
 }
 
-interface Props<T> {
+interface Props<T extends RowData> {
   data: T[];
-  // Column helpers infer per-column value types, so the array is typed loosely here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  columns: ColumnDef<T, any>[];
+  columns: LegacyColumnDef<T, any>[];
   initialSorting?: SortingState;
   /** Client-side sorting. Turn it off when the server orders the rows. Defaults to on. */
   sortable?: boolean;
@@ -31,7 +29,7 @@ interface Props<T> {
 }
 
 /** TanStack Table rendered as a plain HTML table, optionally with manual (server-side) pagination. */
-export function DataTable<T>({
+export function DataTable<T extends RowData>({
   data,
   columns,
   initialSorting = [],
@@ -53,7 +51,7 @@ export function DataTable<T>({
     onSortingChange: setSorting,
     enableSorting: sortable,
     getCoreRowModel: getCoreRowModel(),
-    ...(sortable ? { getSortedRowModel: getSortedRowModel() } : {}),
+    ...(sortable ? { getSortedRowModel: getSortedRowModel() as any } : {}),
     ...(pagination ? { manualPagination: true, pageCount: pagination.pageCount } : {}),
   });
 
