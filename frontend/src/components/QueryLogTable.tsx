@@ -1,9 +1,10 @@
-import { createColumnHelper, type SortingState } from '@tanstack/react-table';
+import { legacyCreateColumnHelper as createColumnHelper } from '@tanstack/react-table/legacy';
 import { useMemo, useState } from 'react';
 import type { QueryLogEntry } from '../api/types';
 import { formatDateTime, formatMs, formatTime, orDash, parseTimestamp } from '../lib/format';
 import { redactDisplay } from '../lib/redact';
 import { DataTable, type PaginationState } from './DataTable';
+import { type SortingState } from '@tanstack/table-core';
 
 const helper = createColumnHelper<QueryLogEntry>();
 
@@ -119,7 +120,7 @@ export function QueryLogTable({
         cell: (info) => (
           <span title={formatDateTime(info.getValue())}>{formatTime(info.getValue())}</span>
         ),
-        sortingFn: (a, b) => {
+        sortFn: (a, b) => {
           const av = parseTimestamp(a.original.time)?.getTime() ?? 0;
           const bv = parseTimestamp(b.original.time)?.getTime() ?? 0;
           return av === bv ? 0 : av > bv ? 1 : -1;

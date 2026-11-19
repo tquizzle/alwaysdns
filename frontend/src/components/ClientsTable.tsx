@@ -1,4 +1,4 @@
-import { createColumnHelper } from '@tanstack/react-table';
+import { legacyCreateColumnHelper as createColumnHelper } from '@tanstack/react-table/legacy';
 import { useMemo, useState } from 'react';
 import type { Client, ClientUpdateBody } from '../api/types';
 import { clientBody } from '../lib/clients';

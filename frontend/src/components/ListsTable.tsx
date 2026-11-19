@@ -1,4 +1,4 @@
-import { createColumnHelper } from '@tanstack/react-table';
+import { legacyCreateColumnHelper as createColumnHelper } from '@tanstack/react-table/legacy';
 import { useMemo } from 'react';
 import type { FilterList } from '../api/types';
 import { formatDateTime, formatInt } from '../lib/format';
